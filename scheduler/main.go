@@ -48,6 +48,7 @@ func main() {
 	scheduler.run(quit)
 }
 
+//construção do objeto Scheduler, que será utilizado durante disparo dos eventos de schedule do Kubernetes
 func buildScheduler(podQueue chan *v1.Pod, quit chan struct{}) Scheduler {
 	config, err := rest.InClusterConfig()
 
