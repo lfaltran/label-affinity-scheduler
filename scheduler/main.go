@@ -23,17 +23,12 @@ import (
 
 const schedulerName = "label-affinity-scheduler"
 
-type predicateFunc func(node *v1.Node, pod *v1.Pod) bool
-type priorityFunc func(node *v1.Node, pod *v1.Pod) int
-
 //POJO de apoio para realizar a gestão de PODS e o processo de Bind
 type Scheduler struct {
 	clientset  *kubernetes.Clientset
 	context    context.Context
 	podQueue   chan *v1.Pod
 	nodeLister listersv1.NodeLister
-	predicates []predicateFunc
-	priorities []priorityFunc
 }
 
 //inicio da execução, disponibilizando o Custom Scheduler como um Deployment
@@ -76,12 +71,6 @@ func buildScheduler(podQueue chan *v1.Pod, quit chan struct{}) Scheduler {
 		context:    context,
 		podQueue:   podQueue,
 		nodeLister: nodeListener,
-		predicates: []predicateFunc{
-			randomPredicate,
-		},
-		priorities: []priorityFunc{
-			randomPriority,
-		},
 	}
 }
 
@@ -234,12 +223,12 @@ func (scheduler *Scheduler) listNodesHighestLabelAffinity(listOfNodes []*v1.Node
 }
 
 // Deprecated: método não será utilizado, herança do "random-scheduler"
-func (s *Scheduler) predicatesApply(node *v1.Node, pod *v1.Pod) bool {
-	for _, predicate := range s.predicates {
-		if !predicate(node, pod) {
-			return false
-		}
-	}
+func (scheduler *Scheduler) predicatesApply(node *v1.Node, pod *v1.Pod) bool {
+	// for _, predicate := range scheduler.predicates {
+	// 	if !predicate(node, pod) {
+	// 		return false
+	// 	}
+	// }
 
 	return true
 }
