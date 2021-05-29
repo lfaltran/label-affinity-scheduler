@@ -67,6 +67,7 @@ func buildScheduler(podQueue chan *v1.Pod, quit chan struct{}) Scheduler {
 	//construção dos Listeners, para monitoramento dos novos NODES/PODS adicionados ao Cluster
 	nodeListener := buildNodeAndPodListeners(clientset, podQueue, quit)
 
+	//retornando nova instância da classe Scheduler
 	return Scheduler{
 		clientset:  clientset,
 		context:    context,
