@@ -306,7 +306,7 @@ func (scheduler *Scheduler) buildNodePriority(listOfNodes []*v1.Node, pod *v1.Po
 			continue
 		}
 
-		fmt.Println("Node [%s] usage -> CPU [%d/%d] Memory [%d/%d]", node.Name, cpuCapacityQuantity, cpuUsageQuantity, memCapacityQuantity, memUsageQuantity)
+		fmt.Printf("Node [%s] usage -> CPU [%d/%d] Memory [%d/%d]\n", node.Name, cpuCapacityQuantity, cpuUsageQuantity, memCapacityQuantity, memUsageQuantity)
 		mapOfNodePriorities[node.Name] += int(cpuUsageQuantity)
 
 		//codigo obsoleto
