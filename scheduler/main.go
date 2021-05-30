@@ -192,15 +192,15 @@ func (scheduler *Scheduler) findNodeForPodBind(pod *v1.Pod) (string, error) {
 func (scheduler *Scheduler) listNodesHighestLabelAffinity(listOfNodes []*v1.Node, pod *v1.Pod) []*v1.Node {
 	listOfFilteredNodes := make([]*v1.Node, 0)
 
-	//Fer
-	for _, podLabel := range pod.ObjectMeta.Labels {
-		log.Println("Pod Label -> " + podLabel)
+	//percorrendo as labels vinculadas ao POD
+	for podLabelKey, podLabelValue := range pod.ObjectMeta.Labels {
+		log.Println("Pod Label -> " + podLabelKey + "/" + podLabelValue)
 	}
 
 	for _, node := range listOfNodes {
-		//Fer
-		for _, nodeLabel := range node.ObjectMeta.Labels {
-			log.Println("Node Label -> " + nodeLabel)
+		//percorrendo as labels vinculadas ao NODE
+		for nodeLabelKey, nodeLabelValue := range node.ObjectMeta.Labels {
+			log.Println("Node Label -> " + nodeLabelKey + "/" + nodeLabelValue)
 		}
 
 		//TODO implementar neste ponto o check de labels
