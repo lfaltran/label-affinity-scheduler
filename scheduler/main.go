@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"strings"
 	"time"
 
 	"context"
@@ -22,6 +23,7 @@ import (
 )
 
 const schedulerName = "label-affinity-scheduler"
+const dnsForLabelPrefix = "ppgcomp.unioeste.br"
 
 //POJO de apoio para realizar a gestão de PODS e o processo de Bind
 type Scheduler struct {
@@ -33,7 +35,7 @@ type Scheduler struct {
 
 //inicio da execução, disponibilizando o Custom Scheduler como um Deployment
 func main() {
-	log.Println("[" + schedulerName + "] Custom Scheduler Ready!")
+	log.Println("Custom Scheduler Ready! [" + schedulerName + "]")
 
 	rand.Seed(time.Now().Unix())
 
@@ -104,6 +106,7 @@ func buildNodeAndPodListeners(clientset *kubernetes.Clientset, podQueue chan *v1
 
 			if !podOk {
 				log.Println("this is not a pod")
+
 				return
 			}
 
@@ -119,7 +122,7 @@ func buildNodeAndPodListeners(clientset *kubernetes.Clientset, podQueue chan *v1
 	return nodeInformer.Lister()
 }
 
-//método executado após construção do scheduler
+//método executado após interceptação de um novo POD
 func (scheduler *Scheduler) run(quit chan struct{}) {
 	wait.Until(scheduler.schedulePodInQueue, 0, quit)
 }
@@ -193,14 +196,26 @@ func (scheduler *Scheduler) listNodesHighestLabelAffinity(listOfNodes []*v1.Node
 	listOfFilteredNodes := make([]*v1.Node, 0)
 
 	//percorrendo as labels vinculadas ao POD
+	log.Println("Pod labels for " + schedulerName)
+
 	for podLabelKey, podLabelValue := range pod.ObjectMeta.Labels {
-		log.Println("Pod Label -> " + podLabelKey + "/" + podLabelValue)
+		if !strings.HasPrefix(podLabelKey, dnsForLabelPrefix) {
+			continue
+		}
+
+		log.Println(podLabelKey + "/" + podLabelValue)
 	}
 
 	for _, node := range listOfNodes {
+		log.Println("Node: " + node.Namespace + "/" + node.Name + " labels for " + schedulerName)
+
 		//percorrendo as labels vinculadas ao NODE
 		for nodeLabelKey, nodeLabelValue := range node.ObjectMeta.Labels {
-			log.Println("Node Label -> " + nodeLabelKey + "/" + nodeLabelValue)
+			if !strings.HasPrefix(nodeLabelKey, dnsForLabelPrefix) {
+				continue
+			}
+
+			log.Println(nodeLabelKey + "/" + nodeLabelValue)
 		}
 
 		//TODO implementar neste ponto o check de labels
@@ -215,7 +230,7 @@ func (scheduler *Scheduler) listNodesHighestLabelAffinity(listOfNodes []*v1.Node
 		// }
 	}
 
-	log.Println("nodes that fit:")
+	log.Println("Nodes that fit:")
 
 	for _, node := range listOfFilteredNodes {
 		log.Println(node.Name)
@@ -317,10 +332,10 @@ func (scheduler *Scheduler) findBestNode(mapOfNodePriorities map[string]int) str
 	var maxP int
 	var bestNode string
 
-	for node, p := range mapOfNodePriorities {
-		if p > maxP {
+	for nodeName, p := range mapOfNodePriorities {
+		if p > maxP || bestNode == "" {
 			maxP = p
-			bestNode = node
+			bestNode = nodeName
 		}
 	}
 
