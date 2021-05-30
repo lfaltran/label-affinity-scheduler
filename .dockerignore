@@ -1,0 +1,4 @@
+#ignorando arquivos de build do projeto
+go.mod
+go.sum
+main

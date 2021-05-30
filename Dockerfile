@@ -3,9 +3,10 @@ FROM golang:1.16-alpine as backend
 RUN apk add --update --no-cache bash ca-certificates curl git make tzdata
 
 RUN mkdir -p /go/src/github.com/lfaltran/label-affinity-scheduler
-ADD Makefile /go/src/github.com/lfaltran/label-affinity-scheduler
-WORKDIR /go/src/github.com/lfaltran/label-affinity-scheduler
 ADD . /go/src/github.com/lfaltran/label-affinity-scheduler
+WORKDIR /go/src/github.com/lfaltran/label-affinity-scheduler
+#RUN make vendor
+#ADD . /go/src/github.com/lfaltran/label-affinity-scheduler
 
 RUN make build
 
