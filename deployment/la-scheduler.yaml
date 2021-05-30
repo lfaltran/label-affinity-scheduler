@@ -17,5 +17,5 @@ spec:
       serviceAccount: las-service-account
       containers:
         - name: label-affinity-scheduler
-          image: lfaltran/label-affinity-scheduler:1.0
+          image: lfaltran/label-affinity-scheduler:1.1
           imagePullPolicy: Always

@@ -196,7 +196,7 @@ func (scheduler *Scheduler) listNodesHighestLabelAffinity(listOfNodes []*v1.Node
 	listOfFilteredNodes := make([]*v1.Node, 0)
 
 	//percorrendo as labels vinculadas ao POD
-	log.Println("Pod labels for " + schedulerName)
+	log.Println("Pod labels for context " + schedulerName)
 
 	for podLabelKey, podLabelValue := range pod.ObjectMeta.Labels {
 		if !strings.HasPrefix(podLabelKey, dnsForLabelPrefix) {
@@ -207,7 +207,7 @@ func (scheduler *Scheduler) listNodesHighestLabelAffinity(listOfNodes []*v1.Node
 	}
 
 	for _, node := range listOfNodes {
-		log.Println("Node: " + node.Namespace + "/" + node.Name + " labels for " + schedulerName)
+		log.Println("Node: " + node.Namespace + "/" + node.Name + " labels for context " + schedulerName)
 
 		//percorrendo as labels vinculadas ao NODE
 		for nodeLabelKey, nodeLabelValue := range node.ObjectMeta.Labels {
@@ -233,7 +233,7 @@ func (scheduler *Scheduler) listNodesHighestLabelAffinity(listOfNodes []*v1.Node
 	log.Println("Nodes that fit:")
 
 	for _, node := range listOfFilteredNodes {
-		log.Println(node.Name)
+		fmt.Printf(node.Name + "\n")
 	}
 
 	return listOfFilteredNodes
@@ -305,14 +305,16 @@ func (scheduler *Scheduler) buildNodePriority(listOfNodes []*v1.Node, pod *v1.Po
 		//declarando atributos para calculo de consumo dos recursos computacionais do NODE atual
 		cpuCapacityQuantity, ok := node.Status.Capacity.Cpu().AsInt64()
 		memCapacityQuantity, ok := node.Status.Capacity.Memory().AsInt64()
+		diskCapacityQuantity, ok := node.Status.Capacity.Storage().AsInt64()
 		cpuUsageQuantity, ok := nodeMetrics.Usage.Cpu().AsInt64()
 		memUsageQuantity, ok := nodeMetrics.Usage.Memory().AsInt64()
+		diskUsageQuantity, ok := nodeMetrics.Usage.Storage().AsInt64()
 
 		if !ok {
 			continue
 		}
 
-		fmt.Printf("Node [%s] usage -> CPU [%d/%d] Memory [%d/%d]\n", node.Name, cpuCapacityQuantity, cpuUsageQuantity, memCapacityQuantity, memUsageQuantity)
+		fmt.Printf("Node [%s] usage -> CPU [%d/%d] Memory [%d/%d] Disk [%d/%d]\n", node.Name, cpuCapacityQuantity, cpuUsageQuantity, memCapacityQuantity, memUsageQuantity, diskCapacityQuantity, diskUsageQuantity)
 		mapOfNodePriorities[node.Name] += int(cpuUsageQuantity)
 
 		//codigo obsoleto
