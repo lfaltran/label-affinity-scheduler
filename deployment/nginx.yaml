@@ -12,7 +12,7 @@ spec:
       labels:
         app: nginx
     spec:
-      schedulerName: random-scheduler
+      schedulerName: label-affinity-scheduler
       containers:
       - name: nginx
         image: nginx:latest
