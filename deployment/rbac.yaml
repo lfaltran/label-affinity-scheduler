@@ -21,6 +21,20 @@ rules:
     - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  namespace: default
+  name: kube-deployments
+rules:
+- apiGroups:
+    - apps
+  resources:
+    - deployments
+  verbs:
+    - get
+    - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: las-listener
@@ -31,7 +45,7 @@ subjects:
 roleRef:
   kind: ClusterRole
   name: system:kube-scheduler
-  apiGroup: rbac.authorization.k8s.io  
+  apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -44,4 +58,17 @@ subjects:
 roleRef:
   kind: ClusterRole
   name: kube-metrics
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: las-deployments
+subjects:
+- kind: ServiceAccount
+  namespace: default
+  name: las-service-account
+roleRef:
+  kind: ClusterRole
+  name: kube-deployments
   apiGroup: rbac.authorization.k8s.io

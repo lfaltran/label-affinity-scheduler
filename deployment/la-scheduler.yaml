@@ -4,6 +4,8 @@ metadata:
   name: label-affinity-scheduler
   labels:
     app: label-affinity-scheduler
+    component: scheduler
+    ppgcomp.unioeste.br/custom-scheduler-dns-prefix: ppgcomp.unioeste.br
 spec:
   replicas: 1
   selector:
@@ -17,5 +19,5 @@ spec:
       serviceAccount: las-service-account
       containers:
         - name: label-affinity-scheduler
-          image: lfaltran/label-affinity-scheduler:1.1
+          image: lfaltran/label-affinity-scheduler:1.2
           imagePullPolicy: Always
