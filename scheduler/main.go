@@ -362,6 +362,9 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 			labelOperator = "eq"
 		}
 
+		//variavel de apoio para saber se o nó computacional deverá ser "desprezado" por não atender os pré-requisitos do POD
+		nodeNotMeetRequirements := false
+
 		//percorrendo os labels do nó computacional
 		for nodeLabelKey, nodeLabelValue := range mapOfNodeLabelsCustomSchedulerStrategy {
 			if nodeLabelKey != podLabelKey {
@@ -370,68 +373,96 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 
 			switch labelOperator {
 			case "eq":
-				if nodeLabelValue != labelValue {
-					affinityValue = -1
+				if nodeLabelValue == labelValue {
+					affinityValue = 1
+				} else {
+					nodeNotMeetRequirements = true
 				}
 			case "ne":
-				if nodeLabelValue == labelValue {
-					affinityValue = -1
+				if nodeLabelValue != labelValue {
+					affinityValue = 1
+				} else {
+					nodeNotMeetRequirements = true
 				}
 			case "gt":
-				if nodeLabelValue <= labelValue {
-					affinityValue = -1
+				if nodeLabelValue > labelValue {
+					affinityValue = 1
+					//TODO calcular o quanto eh MAIOR que o definido no label
+				} else {
+					nodeNotMeetRequirements = true
 				}
 			case "ge":
-				if nodeLabelValue < labelValue {
-					affinityValue = -1
+				if nodeLabelValue >= labelValue {
+					affinityValue = 1
+					//TODO calcular o quanto eh MAIOR que o definido no label
+				} else {
+					nodeNotMeetRequirements = true
 				}
 			case "lt":
-				if nodeLabelValue >= labelValue {
-					affinityValue = -1
+				if nodeLabelValue < labelValue {
+					affinityValue = 1
+					//TODO calcular o quanto eh MENOR que o definido no label
+				} else {
+					nodeNotMeetRequirements = true
 				}
 			case "le":
-				if nodeLabelValue > labelValue {
-					affinityValue = -1
+				if nodeLabelValue <= labelValue {
+					affinityValue = 1
+					//TODO calcular o quanto eh MENOR que o definido no label
+				} else {
+					nodeNotMeetRequirements = true
 				}
 			case "like":
 				//implementação experimental, pois a sintaxe de valores possíveis para um label eh:
 				//(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?
 				//neste caso, não é possível utilizar "*" e "?" para construir os wildcards
-				if !wildcard.Match(labelValue, nodeLabelValue) {
-					affinityValue = -1
+				if wildcard.Match(labelValue, nodeLabelValue) {
+					affinityValue = 1
+				} else {
+					nodeNotMeetRequirements = true
 				}
 			case "notlike":
 				//implementação experimental, pois a sintaxe de valores possíveis para um label eh:
 				//(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?
 				//neste caso, não é possível utilizar "*" e "?" para construir os wildcards
-				if wildcard.Match(labelValue, nodeLabelValue) {
-					affinityValue = -1
+				if !wildcard.Match(labelValue, nodeLabelValue) {
+					affinityValue = 1
+				} else {
+					nodeNotMeetRequirements = true
 				}
 			case "contains":
-				if !strings.Contains(nodeLabelValue, labelValue) {
-					affinityValue = -1
+				if strings.Contains(nodeLabelValue, labelValue) {
+					affinityValue = 1
+				} else {
+					nodeNotMeetRequirements = true
 				}
 			case "notcontains":
-				if strings.Contains(nodeLabelValue, labelValue) {
-					affinityValue = -1
+				if !strings.Contains(nodeLabelValue, labelValue) {
+					affinityValue = 1
+				} else {
+					nodeNotMeetRequirements = true
 				}
 			case "in":
 				arrOfLabelValues := strings.Split(labelValue, "-")
 
-				if !stringInSlice(nodeLabelValue, arrOfLabelValues) {
-					affinityValue = -1
+				if stringInSlice(nodeLabelValue, arrOfLabelValues) {
+					affinityValue = 1
+				} else {
+					nodeNotMeetRequirements = true
 				}
 			case "notin":
 				arrOfLabelValues := strings.Split(labelValue, "-")
 
-				if stringInSlice(nodeLabelValue, arrOfLabelValues) {
-					affinityValue = -1
+				if !stringInSlice(nodeLabelValue, arrOfLabelValues) {
+					affinityValue = 1
+				} else {
+					nodeNotMeetRequirements = true
 				}
 			}
 		}
 
-		//se o "affinityValue" for negativo, significa que valores minimos não foram atingidos, sendo necessário ignorar o nó em questão
-		if affinityValue < 0 {
+		//se a variavel "hasAntiAffinityRestrictions" for TRUE, significa que valores minimos não foram atingidos, sendo necessário ignorar o nó em questão
+		if nodeNotMeetRequirements {
 			affinityError = errors.New("Node Labels doesn't meet requirements for Pod Labels")
 
 			break
