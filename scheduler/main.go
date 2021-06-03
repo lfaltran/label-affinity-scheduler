@@ -39,6 +39,9 @@ type Scheduler struct {
 
 //inicio da execução, disponibilizando o Custom Scheduler como um Deployment
 func main() {
+	//inicialização do ambiente
+	log.SetFlags(0)
+
 	//obtendo as variáveis via Args da execução
 	schedulerName := os.Args[1]
 	labelDNSPrefix := os.Args[2]
