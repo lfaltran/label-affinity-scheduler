@@ -133,6 +133,21 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueue chan *coreV1.Pod,
 				podQueue <- pod
 			}
 		},
+		DeleteFunc: func(obj interface{}) {
+			pod, podOk := obj.(*coreV1.Pod)
+
+			if !podOk {
+				log.Println("this is not a pod")
+
+				return
+			}
+
+			if pod.Spec.NodeName != "" && pod.Spec.SchedulerName == scheduler.name {
+				if scheduler.debugAffinityEvents {
+					log.Println("Pod " + pod.Namespace + "/" + pod.Name + " removed from Node " + pod.Spec.NodeName)
+				}
+			}
+		},
 	})
 
 	factory.Start(quit)
@@ -243,7 +258,7 @@ func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1
 
 	for _, node := range listOfNodes {
 		if scheduler.debugAffinityEvents {
-			log.Println("Node " + node.Namespace + "/" + node.Name + " labels for context " + scheduler.name)
+			log.Println("Node " + node.Name + " labels for context " + scheduler.name)
 		}
 
 		mapOfNodeLabelsCustomSchedulerStrategy := make(map[string]string)
@@ -268,7 +283,7 @@ func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1
 
 		if err != nil {
 			if scheduler.debugAffinityEvents {
-				log.Println("Node " + node.Namespace + "/" + node.Name + " not suitable for Pod " + pod.Namespace + "/" + pod.Name + " => " + err.Error())
+				log.Println("Node " + node.Name + " not suitable for Pod " + pod.Namespace + "/" + pod.Name + " => " + err.Error())
 			}
 
 			continue
