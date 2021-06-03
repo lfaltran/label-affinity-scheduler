@@ -276,7 +276,7 @@ func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1
 	//verificando se não foi encontrado nenhum label para o POD
 	if scheduler.debugAffinityEvents {
 		if len(mapOfPodLabelsCustomSchedulerStrategy) == 0 {
-			log.Println("<empty> no label definition by prefix " + dnsForLabelPrefix + " on current pod")
+			log.Println("<empty> no label definition with prefix " + dnsForLabelPrefix + " on current pod")
 		}
 	}
 
@@ -304,7 +304,7 @@ func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1
 		//verificando se não foi encontrado nenhum label para o NODE
 		if scheduler.debugAffinityEvents {
 			if len(mapOfNodeLabelsCustomSchedulerStrategy) == 0 {
-				log.Println("<empty> no label definition by prefix " + dnsForLabelPrefix + " on current node")
+				log.Println("<empty> no label definition with prefix " + dnsForLabelPrefix + " on current node")
 			}
 		}
 
