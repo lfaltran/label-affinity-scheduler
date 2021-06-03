@@ -3,13 +3,17 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"context"
 	"errors"
 
-	appsV1 "k8s.io/api/apps/v1"
+	"github.com/minio/pkg/wildcard"
+
+	// appsV1 "k8s.io/api/apps/v1"
 	coreV1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -22,21 +26,37 @@ import (
 	metrics "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
-const schedulerName = "label-affinity-scheduler"
-const labelNameForDNSPrefix = "ppgcomp.unioeste.br/custom-scheduler-dns-prefix"
-
 //POJO de apoio para realizar a gestão de PODS e o processo de Bind
 type Scheduler struct {
-	context                     context.Context
-	clientset                   *kubernetes.Clientset
-	podQueue                    chan *coreV1.Pod
-	nodeLister                  listersV1.NodeLister
-	deploymentOfCustomScheduler *appsV1.Deployment
+	name                string
+	labelDNSPrefix      string
+	debugAffinityEvents bool
+	context             context.Context
+	clientset           *kubernetes.Clientset
+	podQueue            chan *coreV1.Pod
+	nodeLister          listersV1.NodeLister
 }
 
 //inicio da execução, disponibilizando o Custom Scheduler como um Deployment
 func main() {
-	log.Println("Custom Scheduler Ready! I'm " + schedulerName)
+	//obtendo as variáveis via Args da execução
+	schedulerName := os.Args[1]
+	labelDNSPrefix := os.Args[2]
+	debugAffinityEvents, err := strconv.ParseBool(os.Args[3])
+
+	if err != nil {
+		debugAffinityEvents = false
+	}
+
+	msgWelcome := fmt.Sprintf("Custom Scheduler Ready! I'm [%s] watching labels [%s]", schedulerName, labelDNSPrefix)
+	log.Println(msgWelcome)
+
+	//criando nova instância do Custom Scheduler
+	scheduler := Scheduler{
+		name:                schedulerName,
+		labelDNSPrefix:      labelDNSPrefix,
+		debugAffinityEvents: debugAffinityEvents,
+	}
 
 	//variavel Channel que armazenará os PODS criados pelo orquestrador e irá enfileirar os eventos de BIND
 	podQueue := make(chan *coreV1.Pod, 300)
@@ -45,13 +65,14 @@ func main() {
 	quit := make(chan struct{})
 	defer close(quit)
 
-	//construção do scheduler
-	scheduler := buildScheduler(podQueue, quit)
+	//vinculando EventHandler dos Nodes/Pods ao scheduler
+	buildSchedulerEventHandler(&scheduler, podQueue, quit)
+
 	scheduler.run(quit)
 }
 
 //construção do objeto Scheduler, que será utilizado durante disparo dos eventos de schedule do Kubernetes
-func buildScheduler(podQueue chan *coreV1.Pod, quit chan struct{}) Scheduler {
+func buildSchedulerEventHandler(scheduler *Scheduler, podQueue chan *coreV1.Pod, quit chan struct{}) {
 	config, err := rest.InClusterConfig()
 
 	if err != nil {
@@ -69,12 +90,12 @@ func buildScheduler(podQueue chan *coreV1.Pod, quit chan struct{}) Scheduler {
 	//variável de apoio na obtenção de dados da API Go p/ Kubernetes
 	factory := informers.NewSharedInformerFactory(clientset, 0)
 
-	//encontrando o DEPLOYMENT que se refere ao Custom Scheduler atual
-	deploymentOfCustomScheduler, err := clientset.AppsV1().Deployments(coreV1.NamespaceDefault).Get(context, schedulerName, metaV1.GetOptions{})
+	// //encontrando o DEPLOYMENT que se refere ao Custom Scheduler atual
+	// deploymentOfCustomScheduler, err := clientset.AppsV1().Deployments(coreV1.NamespaceDefault).Get(context, scheduler.name, metaV1.GetOptions{})
 
-	if err != nil {
-		log.Fatal(err)
-	}
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
 	//construção dos Listeners, para monitoramento dos novos NODES/PODS adicionados ao Cluster
 	//adicionando evento p/ monitorar os NODES
@@ -108,7 +129,7 @@ func buildScheduler(podQueue chan *coreV1.Pod, quit chan struct{}) Scheduler {
 			}
 
 			//verificando se o POD esta sem nenhum NODE vinculado e se o mesmo esta atrelado ao Custom Scheduler atual
-			if pod.Spec.NodeName == "" && pod.Spec.SchedulerName == deploymentOfCustomScheduler.Name {
+			if pod.Spec.NodeName == "" && pod.Spec.SchedulerName == scheduler.name {
 				podQueue <- pod
 			}
 		},
@@ -116,17 +137,11 @@ func buildScheduler(podQueue chan *coreV1.Pod, quit chan struct{}) Scheduler {
 
 	factory.Start(quit)
 
-	//criando nova instância do Custom Scheduler
-	scheduler := Scheduler{
-		context:                     context,
-		clientset:                   clientset,
-		podQueue:                    podQueue,
-		nodeLister:                  nodeLister,
-		deploymentOfCustomScheduler: deploymentOfCustomScheduler,
-	}
-
-	//retornando nova instância da classe Scheduler
-	return scheduler
+	//ajustando atributos do Custom Scheduler
+	scheduler.context = context
+	scheduler.clientset = clientset
+	scheduler.podQueue = podQueue
+	scheduler.nodeLister = nodeLister
 }
 
 //método executado após interceptação de um novo POD
@@ -137,13 +152,13 @@ func (scheduler *Scheduler) run(quit chan struct{}) {
 //Realizando o "agendamento" do POD a um nó computacional
 func (scheduler *Scheduler) schedulePodInQueue() {
 	podQueue := <-scheduler.podQueue
-	fmt.Println("found a pod to schedule: ", podQueue.Namespace, "/", podQueue.Name)
+	log.Println("Received a POD to schedule: ", podQueue.Namespace, "/", podQueue.Name)
 
 	//encontrando o nó computacional com a maior afinidade baseado nas Labels definidas e priorizado pela maior capacidade computacional ociosa
 	nodeForPodBind, err := scheduler.findNodeForPodBind(podQueue)
 
 	if err != nil {
-		log.Println("cannot find node that fits pod", err.Error())
+		log.Println("Cannot find node that fits pod", err.Error())
 
 		return
 	}
@@ -158,7 +173,7 @@ func (scheduler *Scheduler) schedulePodInQueue() {
 	}
 
 	//log no console ref. ao bind realizado
-	message := fmt.Sprintf("Placed pod [%s/%s] on %s\n", podQueue.Namespace, podQueue.Name, nodeForPodBind)
+	message := fmt.Sprintf("Placed pod [%s/%s] on %s", podQueue.Namespace, podQueue.Name, nodeForPodBind)
 
 	//gerando eventos no console do Kubernetes para acompanhar o custom scheduler
 	err = scheduler.emitEvent(podQueue, message)
@@ -169,7 +184,7 @@ func (scheduler *Scheduler) schedulePodInQueue() {
 		return
 	}
 
-	fmt.Println(message)
+	log.Println(message)
 }
 
 //Encontrando o nó computacional participante do cluster que possui a maior afinidade com o POD recebido
@@ -183,15 +198,16 @@ func (scheduler *Scheduler) findNodeForPodBind(pod *coreV1.Pod) (string, error) 
 	}
 
 	//listando os nós computacionais a partir da afinidade de labels
-	listOfFilteredNodes := scheduler.listNodesHighestLabelAffinity(listOfNodes, pod)
+	mapOfNodesByLabelAffinity := scheduler.buildMapOfNodesByLabelAffinity(listOfNodes, pod)
 
 	//nenhum nó compativel :(
-	if len(listOfFilteredNodes) == 0 {
-		return "", errors.New("failed to find node that fits pod")
+	if len(mapOfNodesByLabelAffinity) == 0 {
+		return "", errors.New("Failed to find node that fits pod")
 	}
 
 	//aplicando estratégia de rankear os nodes de acordo com sua capacidade ociosa
-	mapOfNodePriorities := scheduler.buildNodePriority(listOfFilteredNodes, pod)
+	mapOfNodePriorities := scheduler.buildNodePriority(mapOfNodesByLabelAffinity, pod)
+
 	//percorrendo o mapa de prioridades para escolher o nó com maior capacidade ociosa, dentre aqueles que já passaram pelas regras de afinidade das labels
 	nodeForPodBind := scheduler.findBestNode(mapOfNodePriorities)
 
@@ -199,25 +215,38 @@ func (scheduler *Scheduler) findNodeForPodBind(pod *coreV1.Pod) (string, error) 
 }
 
 //listando os nós computacionais de acordo com a afinidade de labels entre PODS e NODES
-func (scheduler *Scheduler) listNodesHighestLabelAffinity(listOfNodes []*coreV1.Node, pod *coreV1.Pod) []*coreV1.Node {
-	listOfFilteredNodes := make([]*coreV1.Node, 0)
+func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1.Node, pod *coreV1.Pod) map[*coreV1.Node]int {
+	mapOfNodesByLabelAffinity := make(map[*coreV1.Node]int)
 
 	//definido qual o DNS definido p/ análise dos labels via prefixo
-	dnsForLabelPrefix := scheduler.deploymentOfCustomScheduler.Labels[labelNameForDNSPrefix]
+	dnsForLabelPrefix := scheduler.labelDNSPrefix
 
 	//percorrendo as labels vinculadas ao POD
-	log.Println("Pod labels for context " + scheduler.deploymentOfCustomScheduler.Name)
+	if scheduler.debugAffinityEvents {
+		log.Println("Pod labels for context " + scheduler.name)
+	}
+
+	mapOfPodLabelsCustomSchedulerStrategy := make(map[string]string)
 
 	for podLabelKey, podLabelValue := range pod.ObjectMeta.Labels {
 		if !strings.HasPrefix(podLabelKey, dnsForLabelPrefix) {
 			continue
 		}
 
-		log.Println(podLabelKey + "/" + podLabelValue)
+		//adicionando os labels do POD ao mapa de controle para realizar comparações de nós
+		mapOfPodLabelsCustomSchedulerStrategy[podLabelKey] = podLabelValue
+
+		if scheduler.debugAffinityEvents {
+			log.Println(podLabelKey + ": " + podLabelValue)
+		}
 	}
 
 	for _, node := range listOfNodes {
-		log.Println("Node: " + node.Namespace + "/" + node.Name + " labels for context " + scheduler.deploymentOfCustomScheduler.Name)
+		if scheduler.debugAffinityEvents {
+			log.Println("Node " + node.Namespace + "/" + node.Name + " labels for context " + scheduler.name)
+		}
+
+		mapOfNodeLabelsCustomSchedulerStrategy := make(map[string]string)
 
 		//percorrendo as labels vinculadas ao NODE
 		for nodeLabelKey, nodeLabelValue := range node.ObjectMeta.Labels {
@@ -225,39 +254,145 @@ func (scheduler *Scheduler) listNodesHighestLabelAffinity(listOfNodes []*coreV1.
 				continue
 			}
 
-			log.Println(nodeLabelKey + "/" + nodeLabelValue)
+			//adicionando os labels do Node ao mapa de controle
+			mapOfNodeLabelsCustomSchedulerStrategy[nodeLabelKey] = nodeLabelValue
+
+			if scheduler.debugAffinityEvents {
+				log.Println(nodeLabelKey + ": " + nodeLabelValue)
+			}
 		}
 
-		//TODO implementar neste ponto o check de labels
-		//despresar labels que não sejam do mesmo DNS
-		//verificar operador definido no valor do label dentro do POD
-		//-- https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_comparison_operators?view=powershell-7.1
-		//-- default será EQUAL
+		//realizando o calculo de afinidade das labels entre Pod e Node
+		//valores NEGATIVOS significando que algum label obrigatório não foi atendido
+		affinityValue, err := computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy, mapOfNodeLabelsCustomSchedulerStrategy)
 
-		listOfFilteredNodes = append(listOfFilteredNodes, node)
-		// if s.predicatesApply(node, pod) {
-		// 	filteredNodes = append(filteredNodes, node)
-		// }
+		if err != nil {
+			if scheduler.debugAffinityEvents {
+				log.Println("Node " + node.Namespace + "/" + node.Name + " not suitable for Pod " + pod.Namespace + "/" + pod.Name + " => " + err.Error())
+			}
+
+			continue
+		}
+
+		mapOfNodesByLabelAffinity[node] = affinityValue
 	}
 
 	log.Println("Nodes that fit:")
 
-	for _, node := range listOfFilteredNodes {
-		fmt.Printf(node.Name + "\n")
+	for node, affinityValue := range mapOfNodesByLabelAffinity {
+		log.Println(node.Name + " [" + strconv.Itoa(affinityValue) + "]")
 	}
 
-	return listOfFilteredNodes
+	return mapOfNodesByLabelAffinity
 }
 
-// Deprecated: método não será utilizado, herança do "random-scheduler"
-func (scheduler *Scheduler) predicatesApply(node *coreV1.Node, pod *coreV1.Pod) bool {
-	// for _, predicate := range scheduler.predicates {
-	// 	if !predicate(node, pod) {
-	// 		return false
-	// 	}
-	// }
+func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]string, mapOfNodeLabelsCustomSchedulerStrategy map[string]string) (int, error) {
+	affinityValue := 0
+	var affinityError error
 
-	return true
+	//lista de operações validas
+	mapOfAllowedOperators := map[string]struct{}{"eq": {}, "ne": {}, "gt": {}, "ge": {}, "lt": {}, "le": {}, "like": {}, "notlike": {}, "contains": {}, "notcontains": {}, "in": {}, "notin": {}}
+
+	//neste ponto é realizado o check de labels
+	//verificar operador definido no valor do label dentro do POD
+	//-- https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_comparison_operators?view=powershell-7.1
+	//-- default será EQUAL
+	for podLabelKey, podLabelValue := range mapOfPodLabelsCustomSchedulerStrategy {
+		//o padrão como operação será EQUAL e todo o conteudo da label como o valor a ser comparado
+		labelOperator := "eq"
+		labelValue := podLabelValue
+
+		//verificando a composição de OPERACAO + VALOR
+		labelValueArgs := strings.Split(podLabelValue, "-")
+
+		//se houverem duas posições após o split em "-", significa que encontrou um label com OPERACAO + VALOR
+		if len(labelValueArgs) >= 2 {
+			labelOperator = labelValueArgs[0]
+			labelValue = strings.Join(labelValueArgs[1:], "-")
+		}
+
+		//verificando se a operação esta contida na lista valida
+		if _, operatorAllowed := mapOfAllowedOperators[labelOperator]; !operatorAllowed {
+			labelOperator = "eq"
+		}
+
+		//percorrendo os labels do nó computacional
+		for nodeLabelKey, nodeLabelValue := range mapOfNodeLabelsCustomSchedulerStrategy {
+			if nodeLabelKey != podLabelKey {
+				continue
+			}
+
+			switch labelOperator {
+			case "eq":
+				if nodeLabelValue != labelValue {
+					affinityValue = -1
+				}
+			case "ne":
+				if nodeLabelValue == labelValue {
+					affinityValue = -1
+				}
+			case "gt":
+				if nodeLabelValue <= labelValue {
+					affinityValue = -1
+				}
+			case "ge":
+				if nodeLabelValue < labelValue {
+					affinityValue = -1
+				}
+			case "lt":
+				if nodeLabelValue >= labelValue {
+					affinityValue = -1
+				}
+			case "le":
+				if nodeLabelValue > labelValue {
+					affinityValue = -1
+				}
+			case "like":
+				//implementação experimental, pois a sintaxe de valores possíveis para um label eh:
+				//(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?
+				//neste caso, não é possível utilizar "*" e "?" para construir os wildcards
+				if !wildcard.Match(labelValue, nodeLabelValue) {
+					affinityValue = -1
+				}
+			case "notlike":
+				//implementação experimental, pois a sintaxe de valores possíveis para um label eh:
+				//(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?
+				//neste caso, não é possível utilizar "*" e "?" para construir os wildcards
+				if wildcard.Match(labelValue, nodeLabelValue) {
+					affinityValue = -1
+				}
+			case "contains":
+				if !strings.Contains(nodeLabelValue, labelValue) {
+					affinityValue = -1
+				}
+			case "notcontains":
+				if strings.Contains(nodeLabelValue, labelValue) {
+					affinityValue = -1
+				}
+			case "in":
+				arrOfLabelValues := strings.Split(labelValue, "-")
+
+				if !stringInSlice(nodeLabelValue, arrOfLabelValues) {
+					affinityValue = -1
+				}
+			case "notin":
+				arrOfLabelValues := strings.Split(labelValue, "-")
+
+				if stringInSlice(nodeLabelValue, arrOfLabelValues) {
+					affinityValue = -1
+				}
+			}
+		}
+
+		//se o "affinityValue" for negativo, significa que valores minimos não foram atingidos, sendo necessário ignorar o nó em questão
+		if affinityValue < 0 {
+			affinityError = errors.New("Node Labels doesn't meet requirements for Pod Labels")
+
+			break
+		}
+	}
+
+	return affinityValue, affinityError
 }
 
 //gerando eventos no console do Kubernetes para acompanhamento
@@ -272,7 +407,7 @@ func (scheduler *Scheduler) emitEvent(p *coreV1.Pod, message string) error {
 		FirstTimestamp: metaV1.NewTime(timestamp),
 		Type:           "Normal",
 		Source: coreV1.EventSource{
-			Component: scheduler.deploymentOfCustomScheduler.Name,
+			Component: scheduler.name,
 		},
 		InvolvedObject: coreV1.ObjectReference{
 			Kind:      "Pod",
@@ -293,7 +428,7 @@ func (scheduler *Scheduler) emitEvent(p *coreV1.Pod, message string) error {
 }
 
 //construindo a prioridade dos NODES a partir de sua capacidade computacional ociosa
-func (scheduler *Scheduler) buildNodePriority(listOfNodes []*coreV1.Node, pod *coreV1.Pod) map[string]int {
+func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*coreV1.Node]int, pod *coreV1.Pod) map[string]int {
 	configMetrics, err := rest.InClusterConfig()
 
 	if err != nil {
@@ -304,7 +439,7 @@ func (scheduler *Scheduler) buildNodePriority(listOfNodes []*coreV1.Node, pod *c
 
 	mapOfNodePriorities := make(map[string]int)
 
-	for _, node := range listOfNodes {
+	for node, affinityValue := range mapOfNodesByLabelAffinity {
 		//obtendo as métricas de uso ref. ao NODE atual
 		nodeMetrics, err := metricsConfig.MetricsV1beta1().NodeMetricses().Get(context.TODO(), node.Name, metaV1.GetOptions{})
 
@@ -326,8 +461,13 @@ func (scheduler *Scheduler) buildNodePriority(listOfNodes []*coreV1.Node, pod *c
 			continue
 		}
 
-		fmt.Printf("Node [%s] usage -> CPU [%d/%d] Memory [%d/%d] Disk [%d/%d] Disk Ephemeral [%d/%d]\n", node.Name, cpuCapacityQuantity, cpuUsageQuantity, memCapacityQuantity, memUsageQuantity, diskCapacityQuantity, diskUsageQuantity, diskEpheCapacityQuantity, diskEpheUsageQuantity)
-		mapOfNodePriorities[node.Name] += int(cpuUsageQuantity)
+		msgNodeUsage := fmt.Sprintf("Node [%s] usage -> CPU [%d/%d] Memory [%d/%d] Disk [%d/%d] Disk Ephemeral [%d/%d]", node.Name, cpuCapacityQuantity, cpuUsageQuantity, memCapacityQuantity, memUsageQuantity, diskCapacityQuantity, diskUsageQuantity, diskEpheCapacityQuantity, diskEpheUsageQuantity)
+		log.Println(msgNodeUsage)
+
+		//a prioridade do nó computacional será definida mediante a afinidade com as labels definidas somada a capacidade livre disponível
+		nodePriority := (affinityValue + int(cpuUsageQuantity))
+
+		mapOfNodePriorities[node.Name] = nodePriority
 
 		//codigo obsoleto
 		// for _, priority := range scheduler.priorities {
@@ -335,8 +475,10 @@ func (scheduler *Scheduler) buildNodePriority(listOfNodes []*coreV1.Node, pod *c
 		// }
 	}
 
-	log.Println("calculated priorities:")
-	log.Println(mapOfNodePriorities)
+	if scheduler.debugAffinityEvents {
+		log.Println("Calculated priorities:")
+		log.Println(mapOfNodePriorities)
+	}
 
 	return mapOfNodePriorities
 }
@@ -356,19 +498,6 @@ func (scheduler *Scheduler) findBestNode(mapOfNodePriorities map[string]int) str
 	return bestNode
 }
 
-//Deprecated: método herdado do "random-scheduler"
-func randomPredicate(node *coreV1.Node, pod *coreV1.Pod) bool {
-	// r := rand.Intn(2)
-
-	return 0 == 0
-}
-
-//Deprecated: método herdado do "random-scheduler"
-func randomPriority(node *coreV1.Node, pod *coreV1.Pod) int {
-	// return rand.Intn(100)
-	return 1
-}
-
 //realizando o "bind" do POD ao nó computacional
 //neste ponto todas as estratégias já foram aplicadas
 //- lista de NODES com afinidade de labels
@@ -385,4 +514,13 @@ func (scheduler *Scheduler) bindPodOnNode(pod *coreV1.Pod, nodeName string) erro
 			Name:       nodeName,
 		},
 	}, metaV1.CreateOptions{})
+}
+
+func stringInSlice(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
 }
