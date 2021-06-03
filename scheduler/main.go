@@ -143,8 +143,20 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueue chan *coreV1.Pod,
 			}
 
 			if pod.Spec.NodeName != "" && pod.Spec.SchedulerName == scheduler.name {
+				//log no console ref. exclusão de Pod
+				message := fmt.Sprintf("Pod [%s/%s] removed from Node %s", pod.Namespace, pod.Name, pod.Spec.NodeName)
+
+				//gerando eventos no console do Kubernetes para acompanhar o custom scheduler
+				err = scheduler.emitEvent(pod, "Unscheduled", message)
+
+				if err != nil {
+					log.Println("failed to emit unscheduled event", err.Error())
+
+					return
+				}
+
 				if scheduler.debugAffinityEvents {
-					log.Println("Pod " + pod.Namespace + "/" + pod.Name + " removed from Node " + pod.Spec.NodeName)
+					log.Println(message)
 				}
 			}
 		},
@@ -167,7 +179,9 @@ func (scheduler *Scheduler) run(quit chan struct{}) {
 //Realizando o "agendamento" do POD a um nó computacional
 func (scheduler *Scheduler) schedulePodInQueue() {
 	podQueue := <-scheduler.podQueue
-	log.Println("Received a POD to schedule: ", podQueue.Namespace, "/", podQueue.Name)
+
+	msgPodReceived := fmt.Sprintf("Received a POD to schedule: %s/%s", podQueue.Namespace, podQueue.Name)
+	log.Println(msgPodReceived)
 
 	//encontrando o nó computacional com a maior afinidade baseado nas Labels definidas e priorizado pela maior capacidade computacional ociosa
 	nodeForPodBind, err := scheduler.findNodeForPodBind(podQueue)
@@ -191,7 +205,7 @@ func (scheduler *Scheduler) schedulePodInQueue() {
 	message := fmt.Sprintf("Placed pod [%s/%s] on %s", podQueue.Namespace, podQueue.Name, nodeForPodBind)
 
 	//gerando eventos no console do Kubernetes para acompanhar o custom scheduler
-	err = scheduler.emitEvent(podQueue, message)
+	err = scheduler.emitEvent(podQueue, "Scheduled", message)
 
 	if err != nil {
 		log.Println("failed to emit scheduled event", err.Error())
@@ -238,7 +252,7 @@ func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1
 
 	//percorrendo as labels vinculadas ao POD
 	if scheduler.debugAffinityEvents {
-		log.Println("Pod labels for context " + scheduler.name)
+		log.Println("Pod labels for custom scheduler " + scheduler.name)
 	}
 
 	mapOfPodLabelsCustomSchedulerStrategy := make(map[string]string)
@@ -252,13 +266,20 @@ func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1
 		mapOfPodLabelsCustomSchedulerStrategy[podLabelKey] = podLabelValue
 
 		if scheduler.debugAffinityEvents {
-			log.Println(podLabelKey + ": " + podLabelValue)
+			log.Println("--> " + podLabelKey + ": " + podLabelValue)
+		}
+	}
+
+	//verificando se não foi encontrado nenhum label para o POD
+	if scheduler.debugAffinityEvents {
+		if len(mapOfPodLabelsCustomSchedulerStrategy) == 0 {
+			log.Println("<empty> no label definition by prefix " + dnsForLabelPrefix + " on current pod")
 		}
 	}
 
 	for _, node := range listOfNodes {
 		if scheduler.debugAffinityEvents {
-			log.Println("Node " + node.Name + " labels for context " + scheduler.name)
+			log.Println("Node " + node.Name + " labels for custom scheduler " + scheduler.name)
 		}
 
 		mapOfNodeLabelsCustomSchedulerStrategy := make(map[string]string)
@@ -273,7 +294,14 @@ func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1
 			mapOfNodeLabelsCustomSchedulerStrategy[nodeLabelKey] = nodeLabelValue
 
 			if scheduler.debugAffinityEvents {
-				log.Println(nodeLabelKey + ": " + nodeLabelValue)
+				log.Println("--> " + nodeLabelKey + ": " + nodeLabelValue)
+			}
+		}
+
+		//verificando se não foi encontrado nenhum label para o NODE
+		if scheduler.debugAffinityEvents {
+			if len(mapOfNodeLabelsCustomSchedulerStrategy) == 0 {
+				log.Println("<empty> no label definition by prefix " + dnsForLabelPrefix + " on current node")
 			}
 		}
 
@@ -411,13 +439,13 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 }
 
 //gerando eventos no console do Kubernetes para acompanhamento
-func (scheduler *Scheduler) emitEvent(p *coreV1.Pod, message string) error {
+func (scheduler *Scheduler) emitEvent(p *coreV1.Pod, reason string, message string) error {
 	timestamp := time.Now().UTC()
 
 	_, err := scheduler.clientset.CoreV1().Events(p.Namespace).Create(context.TODO(), &coreV1.Event{
 		Count:          1,
 		Message:        message,
-		Reason:         "Scheduled",
+		Reason:         reason,
 		LastTimestamp:  metaV1.NewTime(timestamp),
 		FirstTimestamp: metaV1.NewTime(timestamp),
 		Type:           "Normal",
