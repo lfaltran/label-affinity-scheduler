@@ -205,7 +205,7 @@ func (scheduler *Scheduler) schedulePodInQueue() {
 	}
 
 	//log no console ref. ao bind realizado
-	message := fmt.Sprintf("Assigned pod [%s/%s] to %s", podQueue.Namespace, podQueue.Name, nodeForPodBind)
+	message := fmt.Sprintf("Custom Scheduler [%s] assigned pod [%s/%s] to [%s]", scheduler.name, podQueue.Namespace, podQueue.Name, nodeForPodBind)
 
 	//gerando eventos no console do Kubernetes para acompanhar o custom scheduler
 	err = scheduler.emitEvent(podQueue, "Scheduled", message)
