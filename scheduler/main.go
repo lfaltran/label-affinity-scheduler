@@ -202,7 +202,7 @@ func (scheduler *Scheduler) schedulePodInQueue() {
 	}
 
 	//log no console ref. ao bind realizado
-	message := fmt.Sprintf("Placed pod [%s/%s] on %s", podQueue.Namespace, podQueue.Name, nodeForPodBind)
+	message := fmt.Sprintf("Assigned pod [%s/%s] to %s", podQueue.Namespace, podQueue.Name, nodeForPodBind)
 
 	//gerando eventos no console do Kubernetes para acompanhar o custom scheduler
 	err = scheduler.emitEvent(podQueue, "Scheduled", message)
@@ -323,7 +323,7 @@ func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1
 	log.Println("Nodes that fit:")
 
 	for node, affinityValue := range mapOfNodesByLabelAffinity {
-		log.Println(node.Name + " [" + strconv.Itoa(affinityValue) + "]")
+		log.Println("--> " + node.Name + " [" + strconv.Itoa(affinityValue) + "]")
 	}
 
 	return mapOfNodesByLabelAffinity
@@ -519,8 +519,12 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 	}
 
 	if scheduler.debugAffinityEvents {
-		log.Println("Calculated priorities:")
-		log.Println(mapOfNodePriorities)
+		log.Println("Nodes calculated priorities:")
+
+		for nodeName, nodePriority := range mapOfNodePriorities {
+			msgNodePriority := fmt.Sprintf("--> %s [%d]", nodeName, nodePriority)
+			log.Println(msgNodePriority)
+		}
 	}
 
 	return mapOfNodePriorities
