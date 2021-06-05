@@ -18,6 +18,6 @@ spec:
       serviceAccount: las-service-account
       containers:
         - name: label-affinity-scheduler
-          image: lfaltran/label-affinity-scheduler:1.3
+          image: lfaltran/label-affinity-scheduler:1.4
           args: ["label-affinity-scheduler", "ppgcomp.unioeste.br", "true"]
           imagePullPolicy: Always

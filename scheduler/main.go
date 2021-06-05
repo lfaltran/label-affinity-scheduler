@@ -247,8 +247,8 @@ func (scheduler *Scheduler) findNodeForPodBind(pod *coreV1.Pod) (string, error) 
 }
 
 //listando os nós computacionais de acordo com a afinidade de labels entre PODS e NODES
-func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1.Node, pod *coreV1.Pod) map[*coreV1.Node]int {
-	mapOfNodesByLabelAffinity := make(map[*coreV1.Node]int)
+func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1.Node, pod *coreV1.Pod) map[*coreV1.Node]float64 {
+	mapOfNodesByLabelAffinity := make(map[*coreV1.Node]float64)
 
 	//definido qual o DNS definido p/ análise dos labels via prefixo
 	dnsForLabelPrefix := scheduler.labelDNSPrefix
@@ -326,40 +326,48 @@ func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1
 	log.Println("Nodes that fit:")
 
 	for node, affinityValue := range mapOfNodesByLabelAffinity {
-		log.Println("--> " + node.Name + " [" + strconv.Itoa(affinityValue) + "]")
+		strAffinityValue := fmt.Sprintf("%f", affinityValue)
+		log.Println("--> " + node.Name + " [" + strAffinityValue + "]")
 	}
 
 	return mapOfNodesByLabelAffinity
 }
 
-func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]string, mapOfNodeLabelsCustomSchedulerStrategy map[string]string) (int, error) {
-	affinityValue := 0
+func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]string, mapOfNodeLabelsCustomSchedulerStrategy map[string]string) (float64, error) {
+	affinityValue := 0.0
 	var affinityError error
 
 	//lista de operações validas
-	mapOfAllowedOperators := map[string]struct{}{"eq": {}, "ne": {}, "gt": {}, "ge": {}, "lt": {}, "le": {}, "like": {}, "notlike": {}, "contains": {}, "notcontains": {}, "in": {}, "notin": {}}
+	arrOfAllowedOperators := []string{"eq", "ne", "gt", "ge", "lt", "le", "like", "notlike", "contains", "notcontains", "in", "notin"}
 
 	//neste ponto é realizado o check de labels
 	//verificar operador definido no valor do label dentro do POD
 	//-- https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_comparison_operators?view=powershell-7.1
 	//-- default será EQUAL
-	for podLabelKey, podLabelValue := range mapOfPodLabelsCustomSchedulerStrategy {
+	for podLabelKey, podLabelValueRaw := range mapOfPodLabelsCustomSchedulerStrategy {
 		//o padrão como operação será EQUAL e todo o conteudo da label como o valor a ser comparado
-		labelOperator := "eq"
-		labelValue := podLabelValue
+		podLabelOperator := "eq"
+		podLabelValue := podLabelValueRaw
+		podLabelOptional := false
 
 		//verificando a composição de OPERACAO + VALOR
-		labelValueArgs := strings.Split(podLabelValue, "-")
+		podLabelValueArgs := strings.Split(podLabelValueRaw, "-")
 
 		//se houverem duas posições após o split em "-", significa que encontrou um label com OPERACAO + VALOR
-		if len(labelValueArgs) >= 2 {
-			labelOperator = labelValueArgs[0]
-			labelValue = strings.Join(labelValueArgs[1:], "-")
+		if len(podLabelValueArgs) >= 2 {
+			podLabelOperator = podLabelValueArgs[0]
+			podLabelValue = strings.Join(podLabelValueArgs[1:], "-")
+			podLabelOptional = strings.HasSuffix(podLabelOperator, "_")
+
+			if podLabelOptional {
+				podLabelOperator = strings.ReplaceAll(podLabelOperator, "_", "")
+			}
 		}
 
 		//verificando se a operação esta contida na lista valida
-		if _, operatorAllowed := mapOfAllowedOperators[labelOperator]; !operatorAllowed {
-			labelOperator = "eq"
+		if !stringInSlice(podLabelOperator, arrOfAllowedOperators) {
+			podLabelOperator = "eq"
+			podLabelOptional = false
 		}
 
 		//variavel de apoio para saber se o nó computacional deverá ser "desprezado" por não atender os pré-requisitos do POD
@@ -371,91 +379,131 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 				continue
 			}
 
-			switch labelOperator {
+			var podLabelValueAsFloat float64 = 0.0
+			var nodeLabelValueAsFloat float64 = 0.0
+			var errPodLabelValue error
+			var errNodeLabelValue error
+			var mathLabelValueOperation bool = false
+
+			//apoio para realizar calculos envolvendo operadores matemáticos, em que o valor de afinidade será calculado
+			if stringInSlice(podLabelOperator, []string{"gt", "ge", "lt", "le"}) {
+				podLabelValueAsFloat, errPodLabelValue = strconv.ParseFloat(podLabelValue, 10)
+				nodeLabelValueAsFloat, errNodeLabelValue = strconv.ParseFloat(nodeLabelValue, 10)
+
+				//se houver problema
+				if errPodLabelValue == nil && errNodeLabelValue == nil {
+					mathLabelValueOperation = true
+				}
+			}
+
+			//compatibilização com a estratégia de MATCH e wildcards pois a sintaxe de valores possíveis para um label eh:
+			//(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?
+			//neste contexto, o "_" irá representar um caracter qualquer
+			//enquanto o "-" irá representar um conjunto indefinido de caracteres
+			if stringInSlice(podLabelOperator, []string{"like", "notlike"}) {
+				podLabelValue = strings.ReplaceAll(podLabelValue, "_", "?")
+				podLabelValue = strings.ReplaceAll(podLabelValue, "-", "*")
+			}
+
+			switch podLabelOperator {
 			case "eq":
-				if nodeLabelValue == labelValue {
+				if nodeLabelValue == podLabelValue {
 					affinityValue = 1
-				} else {
+				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "ne":
-				if nodeLabelValue != labelValue {
+				if nodeLabelValue != podLabelValue {
 					affinityValue = 1
-				} else {
+				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "gt":
-				if nodeLabelValue > labelValue {
+				if mathLabelValueOperation && nodeLabelValueAsFloat > podLabelValueAsFloat {
+					if podLabelValueAsFloat <= 0 {
+						affinityValue = 1
+					} else {
+						affinityValue = nodeLabelValueAsFloat / podLabelValueAsFloat
+					}
+				} else if nodeLabelValue > podLabelValue {
 					affinityValue = 1
-					//TODO calcular o quanto eh MAIOR que o definido no label
-				} else {
+				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "ge":
-				if nodeLabelValue >= labelValue {
+				if mathLabelValueOperation && nodeLabelValueAsFloat >= podLabelValueAsFloat {
+					if podLabelValueAsFloat <= 0 {
+						affinityValue = 1
+					} else {
+						affinityValue = nodeLabelValueAsFloat / podLabelValueAsFloat
+					}
+				} else if nodeLabelValue >= podLabelValue {
 					affinityValue = 1
-					//TODO calcular o quanto eh MAIOR que o definido no label
-				} else {
+				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "lt":
-				if nodeLabelValue < labelValue {
+				if mathLabelValueOperation && nodeLabelValueAsFloat < podLabelValueAsFloat {
+					if nodeLabelValueAsFloat <= 0 {
+						affinityValue = 1
+					} else {
+						affinityValue = (podLabelValueAsFloat / nodeLabelValueAsFloat) - 1
+					}
+				} else if nodeLabelValue < podLabelValue {
 					affinityValue = 1
-					//TODO calcular o quanto eh MENOR que o definido no label
-				} else {
+				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "le":
-				if nodeLabelValue <= labelValue {
+				if mathLabelValueOperation && nodeLabelValueAsFloat <= podLabelValueAsFloat {
+					if nodeLabelValueAsFloat <= 0 {
+						affinityValue = 1
+					} else {
+						affinityValue = (podLabelValueAsFloat / nodeLabelValueAsFloat) - 1
+					}
+				} else if nodeLabelValue <= podLabelValue {
 					affinityValue = 1
-					//TODO calcular o quanto eh MENOR que o definido no label
-				} else {
+				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "like":
-				//implementação experimental, pois a sintaxe de valores possíveis para um label eh:
-				//(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?
-				//neste caso, não é possível utilizar "*" e "?" para construir os wildcards
-				if wildcard.Match(labelValue, nodeLabelValue) {
+				if wildcard.Match(podLabelValue, nodeLabelValue) {
 					affinityValue = 1
-				} else {
+				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "notlike":
-				//implementação experimental, pois a sintaxe de valores possíveis para um label eh:
-				//(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?
-				//neste caso, não é possível utilizar "*" e "?" para construir os wildcards
-				if !wildcard.Match(labelValue, nodeLabelValue) {
+				if !wildcard.Match(podLabelValue, nodeLabelValue) {
 					affinityValue = 1
-				} else {
+				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "contains":
-				if strings.Contains(nodeLabelValue, labelValue) {
+				if strings.Contains(nodeLabelValue, podLabelValue) {
 					affinityValue = 1
-				} else {
+				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "notcontains":
-				if !strings.Contains(nodeLabelValue, labelValue) {
+				if !strings.Contains(nodeLabelValue, podLabelValue) {
 					affinityValue = 1
-				} else {
+				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "in":
-				arrOfLabelValues := strings.Split(labelValue, "-")
+				arrOfLabelValues := strings.Split(podLabelValue, "-")
 
 				if stringInSlice(nodeLabelValue, arrOfLabelValues) {
 					affinityValue = 1
-				} else {
+				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "notin":
-				arrOfLabelValues := strings.Split(labelValue, "-")
+				arrOfLabelValues := strings.Split(podLabelValue, "-")
 
 				if !stringInSlice(nodeLabelValue, arrOfLabelValues) {
 					affinityValue = 1
-				} else {
+				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			}
@@ -505,7 +553,7 @@ func (scheduler *Scheduler) emitEvent(p *coreV1.Pod, reason string, message stri
 }
 
 //construindo a prioridade dos NODES a partir de sua capacidade computacional ociosa
-func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*coreV1.Node]int, pod *coreV1.Pod) map[string]int {
+func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*coreV1.Node]float64, pod *coreV1.Pod) map[string]float64 {
 	configMetrics, err := rest.InClusterConfig()
 
 	if err != nil {
@@ -514,7 +562,7 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 
 	metricsConfig, err := metrics.NewForConfig(configMetrics)
 
-	mapOfNodePriorities := make(map[string]int)
+	mapOfNodePriorities := make(map[string]float64)
 
 	for node, affinityValue := range mapOfNodesByLabelAffinity {
 		//obtendo as métricas de uso ref. ao NODE atual
@@ -525,38 +573,33 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 		}
 
 		//declarando atributos para calculo de consumo dos recursos computacionais do NODE atual
-		cpuCapacityQuantity, ok := node.Status.Capacity.Cpu().AsInt64()
-		memCapacityQuantity, ok := node.Status.Capacity.Memory().AsInt64()
-		diskCapacityQuantity, ok := node.Status.Capacity.Storage().AsInt64()
-		diskEpheCapacityQuantity, ok := node.Status.Capacity.StorageEphemeral().AsInt64()
-		cpuUsageQuantity, ok := nodeMetrics.Usage.Cpu().AsInt64()
-		memUsageQuantity, ok := nodeMetrics.Usage.Memory().AsInt64()
-		diskUsageQuantity, ok := nodeMetrics.Usage.Storage().AsInt64()
-		diskEpheUsageQuantity, ok := nodeMetrics.Usage.StorageEphemeral().AsInt64()
+		cpuCapacityValue := node.Status.Allocatable.Cpu().MilliValue()
+		memCapacityValue := node.Status.Allocatable.Memory().Value()
+		cpuUsageValue := nodeMetrics.Usage.Cpu().MilliValue()
+		memUsageValue := nodeMetrics.Usage.Memory().Value()
 
-		if !ok {
-			continue
-		}
-
-		msgNodeUsage := fmt.Sprintf("Node [%s] usage -> CPU [%d/%d] Memory [%d/%d] Disk [%d/%d] Disk Ephemeral [%d/%d]", node.Name, cpuCapacityQuantity, cpuUsageQuantity, memCapacityQuantity, memUsageQuantity, diskCapacityQuantity, diskUsageQuantity, diskEpheCapacityQuantity, diskEpheUsageQuantity)
+		msgNodeUsage := fmt.Sprintf("Node [%s] usage -> CPU [%d/%d] Memory [%d/%d]", node.Name, cpuCapacityValue, cpuUsageValue, memCapacityValue, memUsageValue)
 		log.Println(msgNodeUsage)
 
 		//a prioridade do nó computacional será definida mediante a afinidade com as labels definidas somada a capacidade livre disponível
-		nodePriority := (affinityValue + int(cpuUsageQuantity))
+		cpuCapacityUsage := float64(cpuUsageValue) / float64(cpuCapacityValue)
+		memCapacityUsage := float64(memUsageValue) / float64(memCapacityValue)
 
+		//calculando a média de consumo entre CPU e MEMÓRIA
+		percCapacityIdle := (1 - (cpuCapacityUsage+memCapacityUsage)/2) * 100
+
+		//agregando ao valor de afinidade o percentual de capacidade livre
+		nodePriority := (affinityValue + percCapacityIdle)
+
+		//atualizado a prioridade do nó computacional com base em sua capacidade "idle"
 		mapOfNodePriorities[node.Name] = nodePriority
-
-		//codigo obsoleto
-		// for _, priority := range scheduler.priorities {
-		// 	mapOfNodePriorities[node.Name] += priority(node, pod)
-		// }
 	}
 
 	if scheduler.debugAffinityEvents {
 		log.Println("Nodes calculated priorities:")
 
 		for nodeName, nodePriority := range mapOfNodePriorities {
-			msgNodePriority := fmt.Sprintf("--> %s [%d]", nodeName, nodePriority)
+			msgNodePriority := fmt.Sprintf("--> %s [%f]", nodeName, nodePriority)
 			log.Println(msgNodePriority)
 		}
 	}
@@ -565,8 +608,8 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 }
 
 //percorre o mapa de prioridades dos nodes em busca daquele mais "indicado" a receber a instância do node
-func (scheduler *Scheduler) findBestNode(mapOfNodePriorities map[string]int) string {
-	var maxP int
+func (scheduler *Scheduler) findBestNode(mapOfNodePriorities map[string]float64) string {
+	var maxP float64
 	var bestNode string
 
 	for nodeName, p := range mapOfNodePriorities {
@@ -597,11 +640,14 @@ func (scheduler *Scheduler) bindPodOnNode(pod *coreV1.Pod, nodeName string) erro
 	}, metaV1.CreateOptions{})
 }
 
-func stringInSlice(a string, list []string) bool {
-	for _, b := range list {
-		if b == a {
-			return true
+func stringInSlice(strParam string, arrOfStringValues []string) bool {
+	for _, strArrValue := range arrOfStringValues {
+		if strArrValue != strParam {
+			continue
 		}
+
+		return true
 	}
+
 	return false
 }
