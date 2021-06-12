@@ -26,7 +26,7 @@ Versão funcional
 - Definição de variável para habilitar/desabilitar mensagens de debug enviadas ao console
 - Implementação de novo método para realizar o cálculo de afinidade entre labels dos PODS e NODES
 - Definição de lista de operações que serão aceita durante verificação de valores de labels
--- "eq / ne / gt / ge / lt / le / like / notlike / contains / notcontains / in / notin"
+  - "eq / ne / gt / ge / lt / le / like / notlike / contains / notcontains / in / notin"
 - Implementação de regra para validar as operações de comparação entre os labels de PODS e NODE
 - Implementação de EventHandler para monitorar a exclusão de PODS
 
