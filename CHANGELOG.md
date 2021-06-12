@@ -7,7 +7,8 @@ Versão funcional
 ### Added
 
 - Implementação de wildcard para especificar um label como opcional, junto ao seu operador de comparação. Através do caractere “_”, será interpretado como uma comparação desejável, porém se não for satisfeita, o nó computacional não será descartado, apenas não irá pontuar, ex.: “eq_”, “ne_”, etc.
-
+- Implementação para realizar cálculos envolvendo operadores matemáticos, em que o valor de afinidade será resultado da “distância” entre o esperado pelo POD e o encontrado no NODE
+- Implementação do cálculo de recursos computacionais livres para cada nó computacional, utilizado como critério da priorização de qual nó irá receber a carga de trabalho
 ### Changed
   
 - Melhoria na validação de operadores “like” e “notlike”, realizando a tradução dos wildcards “_” e “-” para “?” e “*” respectivamente. Necessário pois os valores aceitos pela engine de labels do kubernetes não compreende caracteres especiais
@@ -15,7 +16,7 @@ Versão funcional
 ### Fixed
 
 - Ajuste na pontuação dos nós computacionais de acordo com o match de labels
-- Ajuste no tipo da variável responsável por armazenar o valor calculado da afinidade de INT para FLOAT, para melhor controle de valores parciais, geralmente utilizados em
+- Ajuste no tipo da variável responsável por armazenar o valor calculado da afinidade de INT para FLOAT, para melhor controle de valores parciais, geralmente utilizados em operações como “ge”, “gt”, “le” e “lt”
 
 ## [1.3] - 2021-06-03
  
