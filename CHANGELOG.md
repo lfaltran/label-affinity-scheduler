@@ -1,6 +1,22 @@
 # Change Log
 
 ## [1.4] - 2021-06-05
+
+Versão funcional
+
+### Added
+
+- Implementação de funcionalidade para validar se há algum Taint no nó computacional, para não considerá-lo durante a tarefa de escalonamento
+
+### Changed
+
+- Melhoria no cálculo de prioridade dos nós computacionais, para considerar a capacidade de PODs e a quantidade já alocada (valor base de 150 pods https://kubernetes.io/docs/setup/best-practices/cluster-large)
+- Melhoria no cálculo da prioridade de nós, para não abortar a execução se o pacote Metrics não estiver disponível
+### Fixed
+
+- Ajuste no console de erro para melhor identificação referente a exceptions geradas pelo pacote Metrics
+
+## [1.4] - 2021-06-05
   
 Versão funcional
  
