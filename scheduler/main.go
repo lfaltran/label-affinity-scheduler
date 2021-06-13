@@ -608,11 +608,11 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 		//declarando atributos para calculo de consumo dos recursos computacionais do NODE atual
 		cpuCapacityValue := node.Status.Allocatable.Cpu().MilliValue()
 		memCapacityValue := node.Status.Allocatable.Memory().Value()
-		// podCapacityValue := node.Status.Allocatable.Pods().Value()
-		podCapacityValue := int64(len(podListFromCurrentNode.Items))
+		podCapacityValue := node.Status.Allocatable.Pods().Value()
 		cpuUsageValue := nodeMetrics.Usage.Cpu().MilliValue()
 		memUsageValue := nodeMetrics.Usage.Memory().Value()
-		podUsageValue := nodeMetrics.Usage.Pods().Value()
+		// podUsageValue := nodeMetrics.Usage.Pods().Value()
+		podUsageValue := int64(len(podListFromCurrentNode.Items))
 
 		msgNodeUsage := fmt.Sprintf("Node [%s] usage -> CPU [%d/%d] Memory [%d/%d] POD [%d/%d]", node.Name, cpuCapacityValue, cpuUsageValue, memCapacityValue, memUsageValue, podCapacityValue, podUsageValue)
 		log.Println(msgNodeUsage)
