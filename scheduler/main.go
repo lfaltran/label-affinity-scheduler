@@ -594,7 +594,7 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 
 		//por definição, um node esta limitado a 110 PODs
 		//https://kubernetes.io/docs/setup/best-practices/cluster-large
-		podCapacityValue := int64(110)
+		var podCapacityValue int64 = 110
 
 		//declarando atributos para calculo de consumo dos recursos computacionais do NODE atual
 		cpuCapacityValue := node.Status.Allocatable.Cpu().MilliValue()
