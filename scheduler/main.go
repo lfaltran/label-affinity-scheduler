@@ -679,10 +679,8 @@ func (scheduler *Scheduler) bindPodOnNode(pod *coreV1.Pod, nodeName string) erro
 func checkIfNodeHasTaints(node *coreV1.Node) bool {
 	arrOfTaints := node.Spec.Taints
 
-	for _, taint := range arrOfTaints {
-		if taint.Key == "node.kubernetes.io/unreachable" && taint.Value == "NoSchedule" {
-			return true
-		}
+	if len(arrOfTaints) > 0 {
+		return true
 	}
 
 	return false
