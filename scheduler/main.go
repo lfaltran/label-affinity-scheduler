@@ -612,14 +612,19 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 		podCapacityUsage := float64(podUsageValue) / float64(podCapacityValue)
 
 		//calculando a média de consumo entre CPU e MEMÓRIA
-		computeCapacityIdle := (1 - (cpuCapacityUsage+memCapacityUsage+podCapacityUsage)/3) * 100
+		computeCapacityIdle := (1 - (cpuCapacityUsage+memCapacityUsage)/2) * 100
 
-		//agregando ao valor de afinidade o percentual de capacidade livre
-		nodePriority := (affinityValue + computeCapacityIdle)
+		var nodePriority float64 = 0
 
 		//se um NODE já chegou ao seu limite de PODs, forço para que ele não seja considerado
 		if podUsageValue >= podCapacityValue {
 			nodePriority = -1
+		} else {
+			//calculando a capacidade livre de POD
+			podCapacityIdle := (1 - podCapacityUsage*100)
+
+			//agregando ao valor de afinidade o percentual de capacidade livre
+			nodePriority = (affinityValue + computeCapacityIdle + podCapacityIdle)
 		}
 
 		//atualizado a prioridade do nó computacional com base em sua capacidade "idle"
