@@ -113,6 +113,15 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueue chan *coreV1.Pod,
 				return
 			}
 
+			//verificando se o node possui algum TAINT ref. a NoSchedule, pois nestes casos, ele não poderá receber nenhum POD
+			hasTaints := checkIfNodeHasTaints(node)
+
+			if hasTaints {
+				log.Printf("Node %s unavailable", node.GetName())
+
+				return
+			}
+
 			log.Printf("New Node Added to Store: %s", node.GetName())
 		},
 	})
@@ -281,6 +290,17 @@ func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1
 	}
 
 	for _, node := range listOfNodes {
+		//verificando se o node possui algum TAINT ref. a NoSchedule, pois nestes casos, ele não poderá receber nenhum POD
+		hasTaints := checkIfNodeHasTaints(node)
+
+		if hasTaints {
+			if scheduler.debugAffinityEvents {
+				log.Println("Node " + node.Name + " tainted! Skipped")
+			}
+
+			continue
+		}
+
 		if scheduler.debugAffinityEvents {
 			log.Println("Node " + node.Name + " labels for custom scheduler " + scheduler.name)
 		}
@@ -572,24 +592,35 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 			log.Fatal(err)
 		}
 
+		//por definição, um node esta limitado a 110 PODs
+		//https://kubernetes.io/docs/setup/best-practices/cluster-large
+		podCapacityValue := int64(110)
+
 		//declarando atributos para calculo de consumo dos recursos computacionais do NODE atual
 		cpuCapacityValue := node.Status.Allocatable.Cpu().MilliValue()
 		memCapacityValue := node.Status.Allocatable.Memory().Value()
 		cpuUsageValue := nodeMetrics.Usage.Cpu().MilliValue()
 		memUsageValue := nodeMetrics.Usage.Memory().Value()
+		podUsageValue := nodeMetrics.Usage.Pods().Value()
 
-		msgNodeUsage := fmt.Sprintf("Node [%s] usage -> CPU [%d/%d] Memory [%d/%d]", node.Name, cpuCapacityValue, cpuUsageValue, memCapacityValue, memUsageValue)
+		msgNodeUsage := fmt.Sprintf("Node [%s] usage -> CPU [%d/%d] Memory [%d/%d] POD [%d/%d]", node.Name, cpuCapacityValue, cpuUsageValue, memCapacityValue, memUsageValue, podCapacityValue, podUsageValue)
 		log.Println(msgNodeUsage)
 
 		//a prioridade do nó computacional será definida mediante a afinidade com as labels definidas somada a capacidade livre disponível
 		cpuCapacityUsage := float64(cpuUsageValue) / float64(cpuCapacityValue)
 		memCapacityUsage := float64(memUsageValue) / float64(memCapacityValue)
+		podCapacityUsage := float64(podUsageValue) / float64(podCapacityValue)
 
 		//calculando a média de consumo entre CPU e MEMÓRIA
-		percCapacityIdle := (1 - (cpuCapacityUsage+memCapacityUsage)/2) * 100
+		computeCapacityIdle := (1 - (cpuCapacityUsage+memCapacityUsage+podCapacityUsage)/3) * 100
 
 		//agregando ao valor de afinidade o percentual de capacidade livre
-		nodePriority := (affinityValue + percCapacityIdle)
+		nodePriority := (affinityValue + computeCapacityIdle)
+
+		//se um NODE já chegou ao seu limite de PODs, forço para que ele não seja considerado
+		if podUsageValue >= podCapacityValue {
+			nodePriority = -1
+		}
 
 		//atualizado a prioridade do nó computacional com base em sua capacidade "idle"
 		mapOfNodePriorities[node.Name] = nodePriority
@@ -640,6 +671,19 @@ func (scheduler *Scheduler) bindPodOnNode(pod *coreV1.Pod, nodeName string) erro
 	}, metaV1.CreateOptions{})
 }
 
+func checkIfNodeHasTaints(node *coreV1.Node) bool {
+	arrOfTaints := node.Spec.Taints
+
+	for _, taint := range arrOfTaints {
+		if taint.Key == "node.kubernetes.io/unreachable" && taint.Value == "NoSchedule" {
+			return true
+		}
+	}
+
+	return false
+}
+
+//verificando se uma string esta contida em um array de valores
 func stringInSlice(strParam string, arrOfStringValues []string) bool {
 	for _, strArrValue := range arrOfStringValues {
 		if strArrValue != strParam {
