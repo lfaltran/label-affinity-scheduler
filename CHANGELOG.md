@@ -1,8 +1,8 @@
 # Change Log
 
-## [1.4] - 2021-06-05
+## [1.5] - 2021-05-13
 
-Versão funcional
+Melhoria no calculo de nós computacionais para receber os PODs, respeitando a quantidade de PODs já alocados
 
 ### Added
 
