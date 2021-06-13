@@ -589,16 +589,27 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 		nodeMetrics, err := metricsConfig.MetricsV1beta1().NodeMetricses().Get(context.TODO(), node.Name, metaV1.GetOptions{})
 
 		if err != nil {
-			log.Fatal(err)
+			log.Println(fmt.Sprintf("Skip Metrics Priority! Error on NodeMetricses -> %s", err))
+
+			continue
 		}
 
-		//por definição, um node esta limitado a 110 PODs
-		//https://kubernetes.io/docs/setup/best-practices/cluster-large
-		var podCapacityValue int64 = 110
+		//calculando a quantidade de PODs em execução no nó atual
+		podListFromCurrentNode, err := scheduler.clientset.CoreV1().Pods(metaV1.NamespaceAll).List(context.TODO(), metaV1.ListOptions{
+			FieldSelector: "spec.nodeName=" + node.Name,
+		})
+
+		if err != nil {
+			log.Println(fmt.Sprintf("Skip Metrics Priority! Error on PodList -> %s", err))
+
+			continue
+		}
 
 		//declarando atributos para calculo de consumo dos recursos computacionais do NODE atual
 		cpuCapacityValue := node.Status.Allocatable.Cpu().MilliValue()
 		memCapacityValue := node.Status.Allocatable.Memory().Value()
+		// podCapacityValue := node.Status.Allocatable.Pods().Value()
+		podCapacityValue := int64(len(podListFromCurrentNode.Items))
 		cpuUsageValue := nodeMetrics.Usage.Cpu().MilliValue()
 		memUsageValue := nodeMetrics.Usage.Memory().Value()
 		podUsageValue := nodeMetrics.Usage.Pods().Value()
