@@ -391,6 +391,7 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 		}
 
 		//variavel de apoio para saber se o nó computacional deverá ser "desprezado" por não atender os pré-requisitos do POD
+		nodeHasPodLabel := false
 		nodeNotMeetRequirements := false
 
 		//percorrendo os labels do nó computacional
@@ -398,6 +399,9 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 			if nodeLabelKey != podLabelKey {
 				continue
 			}
+
+			//a partir daqui o nó possui a definição do label alvo da verificação de afinidade
+			nodeHasPodLabel = true
 
 			var podLabelValueAsFloat float64 = 0.0
 			var nodeLabelValueAsFloat float64 = 0.0
@@ -530,7 +534,7 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 		}
 
 		//se a variavel "hasAntiAffinityRestrictions" for TRUE, significa que valores minimos não foram atingidos, sendo necessário ignorar o nó em questão
-		if nodeNotMeetRequirements {
+		if nodeNotMeetRequirements || (!podLabelOptional && !nodeHasPodLabel) {
 			affinityError = errors.New("Node Labels doesn't meet requirements for Pod Labels")
 
 			break
@@ -589,7 +593,7 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 		nodeMetrics, err := metricsConfig.MetricsV1beta1().NodeMetricses().Get(context.TODO(), node.Name, metaV1.GetOptions{})
 
 		if err != nil {
-			log.Println(fmt.Sprintf("Skip Metrics Priority! Error on NodeMetricses -> %s", err))
+			log.Println(fmt.Sprintf("[%s] Skip Metrics Priority! Error on NodeMetricses -> %s", node.Name, err))
 
 			continue
 		}
@@ -600,7 +604,7 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 		})
 
 		if err != nil {
-			log.Println(fmt.Sprintf("Skip Metrics Priority! Error on PodList -> %s", err))
+			log.Println(fmt.Sprintf("[%s] Skip Metrics Priority! Error on PodList -> %s", node.Name, err))
 
 			continue
 		}

@@ -1,6 +1,17 @@
 # Change Log
 
-## [1.5] - 2021-05-13
+## [1.6] - 2021-06-18
+
+Ajuste na validação de labels entre POD e NODE
+
+### Added
+
+### Changed
+
+### Fixed
+- Correção de bug durante verificação dos labels entre POD e NODE, em cenários em que não há definição no NODE e se trata de um label obrigatório
+
+## [1.5] - 2021-06-13
 
 Melhoria no calculo de nós computacionais para receber os PODs, respeitando a quantidade de PODs já alocados
 
