@@ -5,6 +5,7 @@
 Ajuste na validação de labels entre POD e NODE
 
 ### Added
+- Implementação de variável para controlar o “peso” da afinidade de um label
 
 ### Changed
 

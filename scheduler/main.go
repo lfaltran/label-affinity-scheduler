@@ -369,6 +369,8 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 		podLabelOperator := "eq"
 		podLabelValue := podLabelValueRaw
 		podLabelOptional := false
+		podLabelAffinityWeight := 1.0
+		podLabelAffinityValue := 0.0
 
 		//verificando a composição de OPERACAO + VALOR
 		podLabelValueArgs := strings.Split(podLabelValueRaw, "-")
@@ -381,6 +383,20 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 
 			if podLabelOptional {
 				podLabelOperator = strings.ReplaceAll(podLabelOperator, "_", "")
+			}
+		}
+
+		//se o valor informado para o label possuir um ".", considero que o valor subsequente como sendo um "peso" no calculo do "affinityValue"
+		podLabelWeightArgs := strings.Split(podLabelValue, ".")
+
+		if len(podLabelWeightArgs) >= 2 {
+			podLabelValue = podLabelWeightArgs[0]
+
+			var errPodLabelAffinityWeight error
+			podLabelAffinityWeight, errPodLabelAffinityWeight = strconv.ParseFloat(podLabelWeightArgs[1], 10)
+
+			if errPodLabelAffinityWeight != nil {
+				podLabelAffinityWeight = 1.0
 			}
 		}
 
@@ -432,85 +448,85 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 			switch podLabelOperator {
 			case "eq":
 				if nodeLabelValue == podLabelValue {
-					affinityValue = 1
+					podLabelAffinityValue = 1
 				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "ne":
 				if nodeLabelValue != podLabelValue {
-					affinityValue = 1
+					podLabelAffinityValue = 1
 				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "gt":
 				if mathLabelValueOperation && nodeLabelValueAsFloat > podLabelValueAsFloat {
 					if podLabelValueAsFloat <= 0 {
-						affinityValue = 1
+						podLabelAffinityValue = 1
 					} else {
-						affinityValue = nodeLabelValueAsFloat / podLabelValueAsFloat
+						podLabelAffinityValue = nodeLabelValueAsFloat / podLabelValueAsFloat
 					}
 				} else if nodeLabelValue > podLabelValue {
-					affinityValue = 1
+					podLabelAffinityValue = 1
 				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "ge":
 				if mathLabelValueOperation && nodeLabelValueAsFloat >= podLabelValueAsFloat {
 					if podLabelValueAsFloat <= 0 {
-						affinityValue = 1
+						podLabelAffinityValue = 1
 					} else {
-						affinityValue = nodeLabelValueAsFloat / podLabelValueAsFloat
+						podLabelAffinityValue = nodeLabelValueAsFloat / podLabelValueAsFloat
 					}
 				} else if nodeLabelValue >= podLabelValue {
-					affinityValue = 1
+					podLabelAffinityValue = 1
 				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "lt":
 				if mathLabelValueOperation && nodeLabelValueAsFloat < podLabelValueAsFloat {
 					if nodeLabelValueAsFloat <= 0 {
-						affinityValue = 1
+						podLabelAffinityValue = 1
 					} else {
-						affinityValue = (podLabelValueAsFloat / nodeLabelValueAsFloat) - 1
+						podLabelAffinityValue = (podLabelValueAsFloat / nodeLabelValueAsFloat) - 1
 					}
 				} else if nodeLabelValue < podLabelValue {
-					affinityValue = 1
+					podLabelAffinityValue = 1
 				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "le":
 				if mathLabelValueOperation && nodeLabelValueAsFloat <= podLabelValueAsFloat {
 					if nodeLabelValueAsFloat <= 0 {
-						affinityValue = 1
+						podLabelAffinityValue = 1
 					} else {
-						affinityValue = (podLabelValueAsFloat / nodeLabelValueAsFloat) - 1
+						podLabelAffinityValue = (podLabelValueAsFloat / nodeLabelValueAsFloat) - 1
 					}
 				} else if nodeLabelValue <= podLabelValue {
-					affinityValue = 1
+					podLabelAffinityValue = 1
 				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "like":
 				if wildcard.Match(podLabelValue, nodeLabelValue) {
-					affinityValue = 1
+					podLabelAffinityValue = 1
 				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "notlike":
 				if !wildcard.Match(podLabelValue, nodeLabelValue) {
-					affinityValue = 1
+					podLabelAffinityValue = 1
 				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "contains":
 				if strings.Contains(nodeLabelValue, podLabelValue) {
-					affinityValue = 1
+					podLabelAffinityValue = 1
 				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
 			case "notcontains":
 				if !strings.Contains(nodeLabelValue, podLabelValue) {
-					affinityValue = 1
+					podLabelAffinityValue = 1
 				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
@@ -518,7 +534,7 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 				arrOfLabelValues := strings.Split(podLabelValue, "-")
 
 				if stringInSlice(nodeLabelValue, arrOfLabelValues) {
-					affinityValue = 1
+					podLabelAffinityValue = 1
 				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
@@ -526,10 +542,15 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 				arrOfLabelValues := strings.Split(podLabelValue, "-")
 
 				if !stringInSlice(nodeLabelValue, arrOfLabelValues) {
-					affinityValue = 1
+					podLabelAffinityValue = 1
 				} else if !podLabelOptional {
 					nodeNotMeetRequirements = true
 				}
+			}
+
+			//se houver afinidade, agrego a variavel que totaliza a pontuação geral do nó computacional
+			if podLabelAffinityValue > 0 {
+				affinityValue += (podLabelAffinityValue * podLabelAffinityWeight)
 			}
 		}
 
