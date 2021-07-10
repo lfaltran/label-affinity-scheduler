@@ -215,8 +215,6 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 				return
 			}
 
-			log.Println(deployment)
-
 			//a partir deste ponto vou iniciar o monitoramento do deployment
 			deploymentStatus := deployment.Status
 
