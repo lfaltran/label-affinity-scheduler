@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -13,7 +14,7 @@ import (
 
 	"github.com/minio/pkg/wildcard"
 
-	// appsV1 "k8s.io/api/apps/v1"
+	appsV1 "k8s.io/api/apps/v1"
 	coreV1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -33,8 +34,22 @@ type Scheduler struct {
 	debugAffinityEvents bool
 	context             context.Context
 	clientset           *kubernetes.Clientset
-	podQueue            chan *coreV1.Pod
 	nodeLister          listersV1.NodeLister
+	podQueued           chan *coreV1.Pod
+}
+
+type NodePodDistribution struct {
+	node     *coreV1.Node
+	podCount int
+}
+type NodeLabelAffinity struct {
+	node          *coreV1.Node
+	affinityValue float64
+}
+
+type NodePriority struct {
+	node          *coreV1.Node
+	priorityValue float64
 }
 
 //inicio da execução, disponibilizando o Custom Scheduler como um Deployment
@@ -62,20 +77,20 @@ func main() {
 	}
 
 	//variavel Channel que armazenará os PODS criados pelo orquestrador e irá enfileirar os eventos de BIND
-	podQueue := make(chan *coreV1.Pod, 300)
-	defer close(podQueue)
+	podQueued := make(chan *coreV1.Pod, 300)
+	defer close(podQueued)
 
 	quit := make(chan struct{})
 	defer close(quit)
 
 	//vinculando EventHandler dos Nodes/Pods ao scheduler
-	buildSchedulerEventHandler(&scheduler, podQueue, quit)
+	buildSchedulerEventHandler(&scheduler, podQueued, quit)
 
 	scheduler.run(quit)
 }
 
 //construção do objeto Scheduler, que será utilizado durante disparo dos eventos de schedule do Kubernetes
-func buildSchedulerEventHandler(scheduler *Scheduler, podQueue chan *coreV1.Pod, quit chan struct{}) {
+func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod, quit chan struct{}) {
 	config, err := rest.InClusterConfig()
 
 	if err != nil {
@@ -102,13 +117,13 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueue chan *coreV1.Pod,
 
 	//construção dos Listeners, para monitoramento dos novos NODES/PODS adicionados ao Cluster
 	//adicionando evento p/ monitorar os NODES
-	nodeInformer := factory.Core().V1().Nodes()
-	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	nodeCore := factory.Core().V1().Nodes()
+	nodeCore.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			node, nodeOk := obj.(*coreV1.Node)
 
 			if !nodeOk {
-				log.Println("this is not a node")
+				log.Println("this is not a Node!")
 
 				return
 			}
@@ -126,30 +141,30 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueue chan *coreV1.Pod,
 		},
 	})
 
-	nodeLister := nodeInformer.Lister()
+	nodeLister := nodeCore.Lister()
 
 	//adicionando evento p/ monitorar os PODS
-	podInformer := factory.Core().V1().Pods()
-	podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+	podCore := factory.Core().V1().Pods()
+	podCore.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			pod, podOk := obj.(*coreV1.Pod)
 
 			if !podOk {
-				log.Println("this is not a pod")
+				log.Println("this is not a Pod!")
 
 				return
 			}
 
 			//verificando se o POD esta sem nenhum NODE vinculado e se o mesmo esta atrelado ao Custom Scheduler atual
 			if pod.Spec.NodeName == "" && pod.Spec.SchedulerName == scheduler.name {
-				podQueue <- pod
+				podQueued <- pod
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
 			pod, podOk := obj.(*coreV1.Pod)
 
 			if !podOk {
-				log.Println("this is not a pod")
+				log.Println("this is not a Pod!")
 
 				return
 			}
@@ -174,13 +189,118 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueue chan *coreV1.Pod,
 		},
 	})
 
+	//adicionando lister p/ monitoramento dos deployments
+	deploymentApp := factory.Apps().V1().Deployments()
+	deploymentApp.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: func(oldObj interface{}, newObj interface{}) {
+			deployment, deploymentOk := newObj.(*appsV1.Deployment)
+
+			if !deploymentOk {
+				log.Println("this is not a Deployment!")
+
+				return
+			}
+
+			//verificando se existe o label de monitoramento do status de escalonamento
+			_, hasDeploymentLogEnabled := deployment.Spec.Template.Annotations["lfaltran.io/deployment.node.log"]
+
+			if !hasDeploymentLogEnabled {
+				return
+			}
+
+			//se houver a annotation, verifico se o debug esta ativo
+			deploymentLogEnabled, err := strconv.ParseBool(deployment.Spec.Template.Annotations["lfaltran.io/deployment.node.log"])
+
+			if !deploymentLogEnabled || err != nil {
+				return
+			}
+
+			log.Println(deployment)
+
+			//a partir deste ponto vou iniciar o monitoramento do deployment
+			deploymentStatus := deployment.Status
+
+			// //verificando se há ao menos um POD vinculado ao deployment
+			// if deploymentStatus.ReadyReplicas == 0 {
+			// 	return
+			// }
+
+			//verificando se o escalonamento já foi concluido
+			if deploymentStatus.Replicas != deploymentStatus.ReadyReplicas {
+				return
+			}
+
+			//a partir daqui o deployment esta concluido, então realizo e análise de distribuição dos Pods através dos Nodes
+			message := fmt.Sprintf("Deployment [%s/%s] scaled up to %d replica(s)", deployment.Namespace, deployment.Name, deploymentStatus.ReadyReplicas)
+
+			if scheduler.debugAffinityEvents {
+				log.Println(message)
+			}
+
+			//listar todos os Nodes
+			listOfNodes, err := nodeLister.List(labels.Everything())
+
+			if err != nil {
+				return
+			}
+
+			mapOfNodesWithPodCount := make(map[*coreV1.Node]int)
+
+			for _, node := range listOfNodes {
+				mapOfNodesWithPodCount[node] = 0
+			}
+
+			//listar todos os Pods
+			listOptionsForPodFilter := metaV1.ListOptions{
+				LabelSelector: "app=" + deployment.Name,
+			}
+
+			podListFromCurrentDeployment, err := clientset.CoreV1().Pods(deployment.Namespace).List(context, listOptionsForPodFilter)
+
+			if err != nil {
+				return
+			}
+
+			//percorrendo os Pods e realizando calculo da distribuição nos Nodes
+			for _, podFromCurrentDeployment := range (*podListFromCurrentDeployment).Items {
+				for node := range mapOfNodesWithPodCount {
+					if node.Name != podFromCurrentDeployment.Spec.NodeName {
+						continue
+					}
+
+					mapOfNodesWithPodCount[node] += 1
+				}
+			}
+
+			//listando os nodes e a quantidade de Pods atribuida a cada um deles
+			var arrOfNodePodDistribution []NodePodDistribution
+
+			for k, v := range mapOfNodesWithPodCount {
+				arrOfNodePodDistribution = append(arrOfNodePodDistribution, NodePodDistribution{k, v})
+			}
+
+			sort.Slice(arrOfNodePodDistribution, func(i, j int) bool {
+				return arrOfNodePodDistribution[i].node.Name < arrOfNodePodDistribution[j].node.Name
+			})
+
+			for _, nodePodDistribution := range arrOfNodePodDistribution {
+				node := nodePodDistribution.node
+				podLimitOnNode := int(nodePodDistribution.node.Status.Allocatable.Pods().Value())
+				podAllocatedOnNode := nodePodDistribution.podCount
+				podAllocatableSpaceOnNode := podLimitOnNode - podAllocatedOnNode
+
+				log.Println(fmt.Sprintf("[%s] "+strings.Repeat("+", podAllocatedOnNode)+strings.Repeat("-", podAllocatableSpaceOnNode), node.Name))
+			}
+		},
+	})
+
 	factory.Start(quit)
 
 	//ajustando atributos do Custom Scheduler
 	scheduler.context = context
 	scheduler.clientset = clientset
-	scheduler.podQueue = podQueue
 	scheduler.nodeLister = nodeLister
+	scheduler.podQueued = podQueued
 }
 
 //método executado após interceptação de um novo POD
@@ -190,34 +310,34 @@ func (scheduler *Scheduler) run(quit chan struct{}) {
 
 //Realizando o "agendamento" do POD a um nó computacional
 func (scheduler *Scheduler) schedulePodInQueue() {
-	podQueue := <-scheduler.podQueue
+	podQueued := <-scheduler.podQueued
 
-	msgPodReceived := fmt.Sprintf("Received a POD to schedule: %s/%s", podQueue.Namespace, podQueue.Name)
+	msgPodReceived := fmt.Sprintf("Received a POD to schedule: %s/%s", podQueued.Namespace, podQueued.Name)
 	log.Println(msgPodReceived)
 
 	//encontrando o nó computacional com a maior afinidade baseado nas Labels definidas e priorizado pela maior capacidade computacional ociosa
-	nodeForPodBind, err := scheduler.findNodeForPodBind(podQueue)
+	nodeForPodBind, err := scheduler.findNodeForPodBind(podQueued)
 
 	if err != nil {
-		log.Println("Cannot find node that fits pod", err.Error())
+		log.Println("Cannot find node that fits POD", err.Error())
 
 		return
 	}
 
 	//realizando o "bind" do POD ao nó computacional
-	err = scheduler.bindPodOnNode(podQueue, nodeForPodBind)
+	err = scheduler.bindPodOnNode(podQueued, nodeForPodBind)
 
 	if err != nil {
-		log.Println("failed to bind pod", err.Error())
+		log.Println("failed to bind POD", err.Error())
 
 		return
 	}
 
 	//log no console ref. ao bind realizado
-	message := fmt.Sprintf("Custom Scheduler [%s] assigned pod [%s/%s] to [%s]", scheduler.name, podQueue.Namespace, podQueue.Name, nodeForPodBind)
+	message := fmt.Sprintf("Custom Scheduler [%s] assigned POD [%s/%s] to [%s]", scheduler.name, podQueued.Namespace, podQueued.Name, nodeForPodBind.Name)
 
 	//gerando eventos no console do Kubernetes para acompanhar o custom scheduler
-	err = scheduler.emitEvent(podQueue, "Scheduled", message)
+	err = scheduler.emitEvent(podQueued, "Scheduled", message)
 
 	if err != nil {
 		log.Println("failed to emit scheduled event", err.Error())
@@ -230,12 +350,12 @@ func (scheduler *Scheduler) schedulePodInQueue() {
 
 //Encontrando o nó computacional participante do cluster que possui a maior afinidade com o POD recebido
 //obs.: Em caso de mais de um registro, será priorizado aquele com a maior capacidade computacional ociosa
-func (scheduler *Scheduler) findNodeForPodBind(pod *coreV1.Pod) (string, error) {
+func (scheduler *Scheduler) findNodeForPodBind(pod *coreV1.Pod) (*coreV1.Node, error) {
 	//obtendo a lista de nodes (a partir do listener) disponíveis
 	listOfNodes, err := scheduler.nodeLister.List(labels.Everything())
 
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	//listando os nós computacionais a partir da afinidade de labels
@@ -243,7 +363,7 @@ func (scheduler *Scheduler) findNodeForPodBind(pod *coreV1.Pod) (string, error) 
 
 	//nenhum nó compativel :(
 	if len(mapOfNodesByLabelAffinity) == 0 {
-		return "", errors.New("Failed to find node that fits pod")
+		return nil, errors.New("Failed to find node that fits pod")
 	}
 
 	//aplicando estratégia de rankear os nodes de acordo com sua capacidade ociosa
@@ -343,10 +463,25 @@ func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1
 		mapOfNodesByLabelAffinity[node] = affinityValue
 	}
 
+	//iniciando debug dos Nodes que atendem a distribuição do POD
 	log.Println("Nodes that fit:")
 
-	for node, affinityValue := range mapOfNodesByLabelAffinity {
+	//aplicando ordenação dos Nodes a partir de seu nome
+	var arrOfNodeLabelAffinities []NodeLabelAffinity
+
+	for k, v := range mapOfNodesByLabelAffinity {
+		arrOfNodeLabelAffinities = append(arrOfNodeLabelAffinities, NodeLabelAffinity{k, v})
+	}
+
+	sort.Slice(arrOfNodeLabelAffinities, func(i, j int) bool {
+		return arrOfNodeLabelAffinities[i].node.Name < arrOfNodeLabelAffinities[j].node.Name
+	})
+
+	for _, nodeLabelAffinity := range arrOfNodeLabelAffinities {
+		node := nodeLabelAffinity.node
+		affinityValue := nodeLabelAffinity.affinityValue
 		strAffinityValue := fmt.Sprintf("%f", affinityValue)
+
 		log.Println("--> " + node.Name + " [" + strAffinityValue + "]")
 	}
 
@@ -565,40 +700,8 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 	return affinityValue, affinityError
 }
 
-//gerando eventos no console do Kubernetes para acompanhamento
-func (scheduler *Scheduler) emitEvent(p *coreV1.Pod, reason string, message string) error {
-	timestamp := time.Now().UTC()
-
-	_, err := scheduler.clientset.CoreV1().Events(p.Namespace).Create(context.TODO(), &coreV1.Event{
-		Count:          1,
-		Message:        message,
-		Reason:         reason,
-		LastTimestamp:  metaV1.NewTime(timestamp),
-		FirstTimestamp: metaV1.NewTime(timestamp),
-		Type:           "Normal",
-		Source: coreV1.EventSource{
-			Component: scheduler.name,
-		},
-		InvolvedObject: coreV1.ObjectReference{
-			Kind:      "Pod",
-			Name:      p.Name,
-			Namespace: p.Namespace,
-			UID:       p.UID,
-		},
-		ObjectMeta: metaV1.ObjectMeta{
-			GenerateName: p.Name + "-",
-		},
-	}, metaV1.CreateOptions{})
-
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 //construindo a prioridade dos NODES a partir de sua capacidade computacional ociosa
-func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*coreV1.Node]float64, pod *coreV1.Pod) map[string]float64 {
+func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*coreV1.Node]float64, pod *coreV1.Pod) map[*coreV1.Node]float64 {
 	configMetrics, err := rest.InClusterConfig()
 
 	if err != nil {
@@ -607,13 +710,17 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 
 	metricsConfig, err := metrics.NewForConfig(configMetrics)
 
-	mapOfNodePriorities := make(map[string]float64)
+	mapOfNodePriorities := make(map[*coreV1.Node]float64)
 
 	for node, affinityValue := range mapOfNodesByLabelAffinity {
 		//obtendo as métricas de uso ref. ao NODE atual
 		nodeMetrics, err := metricsConfig.MetricsV1beta1().NodeMetricses().Get(context.TODO(), node.Name, metaV1.GetOptions{})
 
+		//problema p/ obter dados via API de métricas
 		if err != nil {
+			//se não for possível calcular as métricas de um NODE, apenas adiciono ele na lista de prioridades com valor 0
+			mapOfNodePriorities[node] = 0
+
 			log.Println(fmt.Sprintf("[%s] Skip Metrics Priority! Error on NodeMetricses -> %s", node.Name, err))
 
 			continue
@@ -664,14 +771,27 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 		}
 
 		//atualizado a prioridade do nó computacional com base em sua capacidade "idle"
-		mapOfNodePriorities[node.Name] = nodePriority
+		mapOfNodePriorities[node] = nodePriority
 	}
 
 	if scheduler.debugAffinityEvents {
+		//iniciando debug dos Nodes que atendem a distribuição do POD
 		log.Println("Nodes calculated priorities:")
 
-		for nodeName, nodePriority := range mapOfNodePriorities {
-			msgNodePriority := fmt.Sprintf("--> %s [%f]", nodeName, nodePriority)
+		//aplicando ordenação dos Nodes a partir da pontuação de afinidade
+		var arrOfNodePriorities []NodePriority
+
+		for k, v := range mapOfNodePriorities {
+			arrOfNodePriorities = append(arrOfNodePriorities, NodePriority{k, v})
+		}
+
+		sort.Slice(arrOfNodePriorities, func(i, j int) bool {
+			return arrOfNodePriorities[i].priorityValue > arrOfNodePriorities[j].priorityValue
+		})
+
+		for _, nodePriority := range arrOfNodePriorities {
+			msgNodePriority := fmt.Sprintf("--> %s [%f]", nodePriority.node.Name, nodePriority.priorityValue)
+
 			log.Println(msgNodePriority)
 		}
 	}
@@ -680,14 +800,14 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 }
 
 //percorre o mapa de prioridades dos nodes em busca daquele mais "indicado" a receber a instância do node
-func (scheduler *Scheduler) findBestNode(mapOfNodePriorities map[string]float64) string {
+func (scheduler *Scheduler) findBestNode(mapOfNodePriorities map[*coreV1.Node]float64) *coreV1.Node {
 	var maxP float64
-	var bestNode string
+	var bestNode *coreV1.Node
 
-	for nodeName, p := range mapOfNodePriorities {
-		if p > maxP || bestNode == "" {
+	for node, p := range mapOfNodePriorities {
+		if p > maxP || bestNode == nil {
 			maxP = p
-			bestNode = nodeName
+			bestNode = node
 		}
 	}
 
@@ -698,7 +818,7 @@ func (scheduler *Scheduler) findBestNode(mapOfNodePriorities map[string]float64)
 //neste ponto todas as estratégias já foram aplicadas
 //- lista de NODES com afinidade de labels
 //- priorização de NODES com maior capacidade ociosa
-func (scheduler *Scheduler) bindPodOnNode(pod *coreV1.Pod, nodeName string) error {
+func (scheduler *Scheduler) bindPodOnNode(pod *coreV1.Pod, node *coreV1.Node) error {
 	return scheduler.clientset.CoreV1().Pods(pod.Namespace).Bind(context.TODO(), &coreV1.Binding{
 		ObjectMeta: metaV1.ObjectMeta{
 			Name:      pod.Name,
@@ -707,7 +827,7 @@ func (scheduler *Scheduler) bindPodOnNode(pod *coreV1.Pod, nodeName string) erro
 		Target: coreV1.ObjectReference{
 			APIVersion: "v1",
 			Kind:       "Node",
-			Name:       nodeName,
+			Name:       node.Name,
 		},
 	}, metaV1.CreateOptions{})
 }
@@ -720,6 +840,38 @@ func checkIfNodeHasTaints(node *coreV1.Node) bool {
 	}
 
 	return false
+}
+
+//gerando eventos no console do Kubernetes para acompanhamento
+func (scheduler *Scheduler) emitEvent(pod *coreV1.Pod, reason string, message string) error {
+	timestamp := time.Now().UTC()
+
+	_, err := scheduler.clientset.CoreV1().Events(pod.Namespace).Create(context.TODO(), &coreV1.Event{
+		Count:          1,
+		Message:        message,
+		Reason:         reason,
+		LastTimestamp:  metaV1.NewTime(timestamp),
+		FirstTimestamp: metaV1.NewTime(timestamp),
+		Type:           "Normal",
+		Source: coreV1.EventSource{
+			Component: scheduler.name,
+		},
+		InvolvedObject: coreV1.ObjectReference{
+			Kind:      "Pod",
+			Name:      pod.Name,
+			Namespace: pod.Namespace,
+			UID:       pod.UID,
+		},
+		ObjectMeta: metaV1.ObjectMeta{
+			GenerateName: pod.Name + "-",
+		},
+	}, metaV1.CreateOptions{})
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 //verificando se uma string esta contida em um array de valores
