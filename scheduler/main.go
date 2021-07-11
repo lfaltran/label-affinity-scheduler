@@ -182,9 +182,7 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 					return
 				}
 
-				if scheduler.debugAffinityEvents {
-					log.Println(message)
-				}
+				log.Println(message)
 			}
 		},
 	})
@@ -218,77 +216,30 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 			//a partir deste ponto vou iniciar o monitoramento do deployment
 			deploymentStatus := deployment.Status
 
-			// //verificando se há ao menos um POD vinculado ao deployment
-			// if deploymentStatus.ReadyReplicas == 0 {
-			// 	return
-			// }
-
 			//verificando se o escalonamento já foi concluido
-			if deploymentStatus.Replicas != deploymentStatus.ReadyReplicas {
+			if deploymentStatus.UnavailableReplicas > 0 || deploymentStatus.Replicas != deploymentStatus.ReadyReplicas {
 				return
 			}
 
-			//a partir daqui o deployment esta concluido, então realizo e análise de distribuição dos Pods através dos Nodes
-			message := fmt.Sprintf("Deployment [%s/%s] scaled up to %d replica(s)", deployment.Namespace, deployment.Name, deploymentStatus.ReadyReplicas)
+			//percorrendo as condições do Deployment p/ saber se o registro do tipo "Available" esta "true"
+			deploymentUnavailable := false
+			arrOfDeploymentConditions := deployment.Status.Conditions
 
-			if scheduler.debugAffinityEvents {
-				log.Println(message)
-			}
-
-			//listar todos os Nodes
-			listOfNodes, err := nodeLister.List(labels.Everything())
-
-			if err != nil {
-				return
-			}
-
-			mapOfNodesWithPodCount := make(map[*coreV1.Node]int)
-
-			for _, node := range listOfNodes {
-				mapOfNodesWithPodCount[node] = 0
-			}
-
-			//listar todos os Pods
-			listOptionsForPodFilter := metaV1.ListOptions{
-				LabelSelector: "app=" + deployment.Name,
-			}
-
-			podListFromCurrentDeployment, err := clientset.CoreV1().Pods(deployment.Namespace).List(context, listOptionsForPodFilter)
-
-			if err != nil {
-				return
-			}
-
-			//percorrendo os Pods e realizando calculo da distribuição nos Nodes
-			for _, podFromCurrentDeployment := range (*podListFromCurrentDeployment).Items {
-				for node := range mapOfNodesWithPodCount {
-					if node.Name != podFromCurrentDeployment.Spec.NodeName {
-						continue
-					}
-
-					mapOfNodesWithPodCount[node] += 1
+			for _, deploymentCondition := range arrOfDeploymentConditions {
+				if deploymentCondition.Type != "Available" {
+					continue
 				}
+
+				deploymentUnavailable = (deploymentCondition.Status != "True")
 			}
 
-			//listando os nodes e a quantidade de Pods atribuida a cada um deles
-			var arrOfNodePodDistribution []NodePodDistribution
-
-			for k, v := range mapOfNodesWithPodCount {
-				arrOfNodePodDistribution = append(arrOfNodePodDistribution, NodePodDistribution{k, v})
+			//neste ponto, identifico se o Deployment esta indisponível
+			if deploymentUnavailable {
+				return
 			}
 
-			sort.Slice(arrOfNodePodDistribution, func(i, j int) bool {
-				return arrOfNodePodDistribution[i].node.Name < arrOfNodePodDistribution[j].node.Name
-			})
-
-			for _, nodePodDistribution := range arrOfNodePodDistribution {
-				node := nodePodDistribution.node
-				podLimitOnNode := int(nodePodDistribution.node.Status.Allocatable.Pods().Value())
-				podAllocatedOnNode := nodePodDistribution.podCount
-				podAllocatableSpaceOnNode := podLimitOnNode - podAllocatedOnNode
-
-				log.Println(fmt.Sprintf("[%s] "+strings.Repeat("+", podAllocatedOnNode)+strings.Repeat("-", podAllocatableSpaceOnNode), node.Name))
-			}
+			//a partir daqui o Deployment esta supostamente com as atualizações finalizadas
+			go scheduler.printDeploymentNodeAllocation(deployment, nodeLister)
 		},
 	})
 
@@ -462,25 +413,27 @@ func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1
 	}
 
 	//iniciando debug dos Nodes que atendem a distribuição do POD
-	log.Println("Nodes that fit:")
+	if scheduler.debugAffinityEvents {
+		log.Println("Nodes that fit:")
 
-	//aplicando ordenação dos Nodes a partir de seu nome
-	var arrOfNodeLabelAffinities []NodeLabelAffinity
+		//aplicando ordenação dos Nodes a partir de seu nome
+		var arrOfNodeLabelAffinities []NodeLabelAffinity
 
-	for k, v := range mapOfNodesByLabelAffinity {
-		arrOfNodeLabelAffinities = append(arrOfNodeLabelAffinities, NodeLabelAffinity{k, v})
-	}
+		for k, v := range mapOfNodesByLabelAffinity {
+			arrOfNodeLabelAffinities = append(arrOfNodeLabelAffinities, NodeLabelAffinity{k, v})
+		}
 
-	sort.Slice(arrOfNodeLabelAffinities, func(i, j int) bool {
-		return arrOfNodeLabelAffinities[i].node.Name < arrOfNodeLabelAffinities[j].node.Name
-	})
+		sort.Slice(arrOfNodeLabelAffinities, func(i, j int) bool {
+			return arrOfNodeLabelAffinities[i].node.Name < arrOfNodeLabelAffinities[j].node.Name
+		})
 
-	for _, nodeLabelAffinity := range arrOfNodeLabelAffinities {
-		node := nodeLabelAffinity.node
-		affinityValue := nodeLabelAffinity.affinityValue
-		strAffinityValue := fmt.Sprintf("%f", affinityValue)
+		for _, nodeLabelAffinity := range arrOfNodeLabelAffinities {
+			node := nodeLabelAffinity.node
+			affinityValue := nodeLabelAffinity.affinityValue
+			strAffinityValue := fmt.Sprintf("%f", affinityValue)
 
-		log.Println("--> " + node.Name + " [" + strAffinityValue + "]")
+			log.Println("--> " + node.Name + " [" + strAffinityValue + "]")
+		}
 	}
 
 	return mapOfNodesByLabelAffinity
@@ -744,8 +697,11 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 		// podUsageValue := nodeMetrics.Usage.Pods().Value()
 		podUsageValue := int64(len(podListFromCurrentNode.Items))
 
-		msgNodeUsage := fmt.Sprintf("Node [%s] usage -> CPU [%d/%d] Memory [%d/%d] POD [%d/%d]", node.Name, cpuCapacityValue, cpuUsageValue, memCapacityValue, memUsageValue, podCapacityValue, podUsageValue)
-		log.Println(msgNodeUsage)
+		if scheduler.debugAffinityEvents {
+			msgNodeUsage := fmt.Sprintf("Node [%s] usage -> CPU [%d/%d] Memory [%d/%d] POD [%d/%d]", node.Name, cpuCapacityValue, cpuUsageValue, memCapacityValue, memUsageValue, podCapacityValue, podUsageValue)
+
+			log.Println(msgNodeUsage)
+		}
 
 		//a prioridade do nó computacional será definida mediante a afinidade com as labels definidas somada a capacidade livre disponível
 		cpuCapacityUsage := float64(cpuUsageValue) / float64(cpuCapacityValue)
@@ -870,6 +826,77 @@ func (scheduler *Scheduler) emitEvent(pod *coreV1.Pod, reason string, message st
 	}
 
 	return nil
+}
+
+func (scheduler *Scheduler) printDeploymentNodeAllocation(deployment *appsV1.Deployment, nodeLister listersV1.NodeLister) {
+	//listar todos os Nodes
+	listOfNodes, err := nodeLister.List(labels.Everything())
+
+	if err != nil {
+		return
+	}
+
+	mapOfNodesWithPodCount := make(map[*coreV1.Node]int)
+
+	for _, node := range listOfNodes {
+		mapOfNodesWithPodCount[node] = 0
+	}
+
+	//listar todos os Pods
+	listOptionsForPodFilter := metaV1.ListOptions{
+		LabelSelector: "app=" + deployment.Name,
+	}
+
+	//adicionando um tempo p/ que o status atual do deployment seja atualizado e a coleta de dados aconteça de forma mais precisa
+	time.Sleep(10 * time.Second)
+
+	podListFromCurrentDeployment, err := scheduler.clientset.CoreV1().Pods(deployment.Namespace).List(context.TODO(), listOptionsForPodFilter)
+
+	if err != nil {
+		return
+	}
+
+	//verificando se o "update" recebido esta de acordo com a quantidade de Pods atuais do deployment
+	deploymentStatus := deployment.Status
+	deploymentPodCount := int32(len(podListFromCurrentDeployment.Items))
+
+	if deploymentStatus.Replicas != deploymentPodCount {
+		return
+	}
+
+	//percorrendo os Pods e realizando calculo da distribuição nos Nodes
+	for _, podFromCurrentDeployment := range (*podListFromCurrentDeployment).Items {
+		for node := range mapOfNodesWithPodCount {
+			if node.Name != podFromCurrentDeployment.Spec.NodeName {
+				continue
+			}
+
+			mapOfNodesWithPodCount[node] += 1
+		}
+	}
+
+	//listando os nodes e a quantidade de Pods atribuida a cada um deles
+	var arrOfNodePodDistribution []NodePodDistribution
+
+	for k, v := range mapOfNodesWithPodCount {
+		arrOfNodePodDistribution = append(arrOfNodePodDistribution, NodePodDistribution{k, v})
+	}
+
+	sort.Slice(arrOfNodePodDistribution, func(i, j int) bool {
+		return arrOfNodePodDistribution[i].node.Name < arrOfNodePodDistribution[j].node.Name
+	})
+
+	//a partir daqui o deployment esta concluido, então realizo e análise de distribuição dos Pods através dos Nodes
+	log.Println(fmt.Sprintf("Deployment [%s/%s] scaled up to %d replica(s)", deployment.Namespace, deployment.Name, deploymentStatus.ReadyReplicas))
+
+	for _, nodePodDistribution := range arrOfNodePodDistribution {
+		node := nodePodDistribution.node
+		podLimitOnNode := int(nodePodDistribution.node.Status.Allocatable.Pods().Value())
+		podAllocatedOnNode := nodePodDistribution.podCount
+		podAllocatableSpaceOnNode := podLimitOnNode - podAllocatedOnNode
+
+		log.Println(fmt.Sprintf("[%s] "+strings.Repeat("+", podAllocatedOnNode)+strings.Repeat("-", podAllocatableSpaceOnNode), node.Name))
+	}
 }
 
 //verificando se uma string esta contida em um array de valores
