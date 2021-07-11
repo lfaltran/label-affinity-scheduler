@@ -1,5 +1,20 @@
 # Change Log
 
+## [1.7] - 2021-07-11
+
+Melhorias na geração de log geral do custom scheduler, para uma melhor análise comportamental
+
+### Added
+- Implementação de log final após conclusão das operações de "scale" de um deployment para exibir a distribuição dos Pods através dos Nodes
+- Nova configuração para permitir que o log de distribuição dos Pods seja ativado/desativado para deployments específicos
+
+### Changed
+- Melhoria na execução sem os logs ativos, exibindo apenas as informações fundamentais
+
+### Fixed
+- Correção da versão utilizada do Metrics Server, aplicando um downgrade da versão v0.5.0 p/ v0.4.1 ajuste necessário para evitar erro de "context deadline exceeded"
+- Ajuste de parâmetro (imagePullPolicy) para evitar o download a cada nova adição de um Pod e assim receber erro do Docker HUB "429 - You have reached your pull rate limit"
+
 ## [1.6] - 2021-06-18
 
 Ajuste na validação de labels entre POD e NODE
