@@ -74,25 +74,22 @@ iptables -P INPUT ACCEPT
 iptables -P OUTPUT ACCEPT
 iptables -P FORWARD ACCEPT
 
+# salvando as regras de IP TABLES
 iptables -I INPUT -s 192.168.0.0/24 -d 192.168.0.0/24 -j ACCEPT
 iptables -D FORWARD -j REJECT --reject-with icmp-host-prohibited
+
+iptables-save > /etc/iptables/rules.v4
+
+cat > /etc/rc.local <<EOF
+/sbin/iptables-restore < /etc/iptables/rules.v4
+EOF
 
 # Configurar VPN - https://dev.to/netikras/kubernetes-on-vpn-wireguard-152l
 sudo apt-get install -y wireguard-tools net-tools
 
-### AO TÉRMINO ###
-#Executar no NODE MASTER -> kubeadm token create --print-join-command
-#Executar no NODE WORKER -> kubeadm join k8s-ppgcomp.unioeste.br:6443 ... --node-name
-
-#remover arquivos do CALICO (se houverem)
-# /etc/cni/net.d
-
-#https://www.thenoccave.com/2020/08/kubernetes-flannel-failed-to-list-v1-service/
-# criar arquivo /run/flannel/subnet.env
-# FLANNEL_NETWORK=10.244.0.0/16
-# FLANNEL_SUBNET=192.168.0.1/24
-# FLANNEL_MTU=8950
-# FLANNEL_IPMASQ=true
+# append no /etc/hosts
+# 129.146.171.94 k8s-ppgcomp.unioeste.br
+echo '129.146.171.94 k8s-ppgcomp.unioeste.br' | tee -a /etc/hosts
 
 #https://dev.to/netikras/kubernetes-on-vpn-wireguard-152l
 
@@ -108,4 +105,12 @@ sudo apt-get install -y wireguard-tools net-tools
 # Ajustar informações ref. ao NODE
 # vi /etc/default/kubelet
 # KUBELET_EXTRA_ARGS=--node-ip={IP_VPN/192.168.0.x}
+cat > /etc/default/kubelet <<EOF
+KUBELET_EXTRA_ARGS=--node-ip=192.168.0.
+EOF
+
 # systemctl restart kubelet
+
+### AO TÉRMINO ###
+#Executar no NODE MASTER -> kubeadm token create --print-join-command
+#Executar no NODE WORKER -> kubeadm join k8s-ppgcomp.unioeste.br:6443 ... --node-name

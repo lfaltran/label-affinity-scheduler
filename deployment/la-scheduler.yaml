@@ -19,5 +19,7 @@ spec:
       containers:
         - name: label-affinity-scheduler
           image: lfaltran/label-affinity-scheduler:1.7
-          args: ["label-affinity-scheduler", "ppgcomp.unioeste.br", "false"]
-          imagePullPolicy: Always
+          args: ["label-affinity-scheduler", "ppgcomp.unioeste.br", "true"]
+          imagePullPolicy: IfNotPresent
+      nodeSelector:
+        kubernetes.io/hostname: k8smaster

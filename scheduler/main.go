@@ -664,6 +664,7 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 	mapOfNodePriorities := make(map[*coreV1.Node]float64)
 
 	for node, affinityValue := range mapOfNodesByLabelAffinity {
+		//TODO buscar método alternativo p/ calculo da ociosidade computacional, estou tendo mtos problemas com o Metrics Server
 		//obtendo as métricas de uso ref. ao NODE atual
 		nodeMetrics, err := metricsConfig.MetricsV1beta1().NodeMetricses().Get(context.TODO(), node.Name, metaV1.GetOptions{})
 
@@ -687,6 +688,16 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 
 			continue
 		}
+
+		// //TODO calculando recurso utilizado pelos PODs diretamente dos limites definidos do deployment
+		// for _, podFromCurrentNode := range (*podListFromCurrentNode).Items {
+		// 	arrOfContainersFromPod := podFromCurrentNode.Spec.Containers
+
+		// 	for _, containerFromPod := range arrOfContainersFromPod {
+		// 		containerFromPod.Resources.Limits.Cpu().Value()
+		// 		containerFromPod.Resources.Limits.Memory().Value()
+		// 	}
+		// }
 
 		//declarando atributos para calculo de consumo dos recursos computacionais do NODE atual
 		cpuCapacityValue := node.Status.Allocatable.Cpu().MilliValue()
