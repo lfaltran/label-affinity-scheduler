@@ -953,7 +953,7 @@ func (scheduler *Scheduler) printDeploymentNodeAllocation(deployment *appsV1.Dep
 		podAllocatedOnNode := nodePodDistribution.podCount
 		podAllocatableSpaceOnNode := podLimitOnNode - podAllocatedOnNode
 
-		log.Println(fmt.Sprintf("[%s] "+strings.Repeat("+", podAllocatedOnNode)+strings.Repeat("-", podAllocatableSpaceOnNode), node.Name))
+		log.Println(fmt.Sprintf("[%-16s] "+strings.Repeat("+", podAllocatedOnNode)+strings.Repeat("-", podAllocatableSpaceOnNode), node.Name))
 	}
 }
 
