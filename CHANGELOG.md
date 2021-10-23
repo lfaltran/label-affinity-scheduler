@@ -1,5 +1,17 @@
 # Change Log
 
+## [1.7] - 2021-10-23
+
+Nova funcionalidade para flexibilitar a estratégia para coleta de consumo computacional de cada nó participante do cluster
+
+### Added
+- Início do desenvolvimento da integração com a API de Métricas “Kube State Metrics”
+- Nova estratégia para definição do consumo computacional de cada nó participante do cluster, extraindo dados dos limites definidos na tag “resources”
+
+### Changed
+
+### Fixed
+
 ## [1.7] - 2021-07-11
 
 Melhorias na geração de log geral do custom scheduler, para uma melhor análise comportamental
