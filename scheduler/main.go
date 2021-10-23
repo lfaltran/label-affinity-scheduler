@@ -177,7 +177,7 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 
 			if pod.Spec.NodeName != "" && pod.Spec.SchedulerName == scheduler.name {
 				//log no console ref. exclusão de Pod
-				message := fmt.Sprintf("Pod [%s/%s] removed from Node %s", pod.Namespace, pod.Name, pod.Spec.NodeName)
+				message := fmt.Sprintf("Pod [%s/%s] removed from Node [%-16s]", pod.Namespace, pod.Name, pod.Spec.NodeName)
 
 				//gerando eventos no console do Kubernetes para acompanhar o custom scheduler
 				err = scheduler.emitEvent(pod, "Unscheduled", message)
@@ -289,7 +289,7 @@ func (scheduler *Scheduler) schedulePodInQueue() {
 	}
 
 	//log no console ref. ao bind realizado
-	message := fmt.Sprintf("Custom Scheduler [%s] assigned POD [%s/%s] to [%s]", scheduler.name, podQueued.Namespace, podQueued.Name, nodeForPodBind.Name)
+	message := fmt.Sprintf("Custom Scheduler [%s] assigned POD [%s/%s] to [%-16s]", scheduler.name, podQueued.Namespace, podQueued.Name, nodeForPodBind.Name)
 
 	//gerando eventos no console do Kubernetes para acompanhar o custom scheduler
 	err = scheduler.emitEvent(podQueued, "Scheduled", message)
@@ -436,9 +436,8 @@ func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1
 		for _, nodeLabelAffinity := range arrOfNodeLabelAffinities {
 			node := nodeLabelAffinity.node
 			affinityValue := nodeLabelAffinity.affinityValue
-			strAffinityValue := fmt.Sprintf("%f", affinityValue)
 
-			log.Println("--> " + node.Name + " [" + strAffinityValue + "]")
+			log.Println(fmt.Sprintf("--> %-16s [%f]", node, affinityValue))
 		}
 	}
 
@@ -709,7 +708,7 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 				//se não for possível calcular as métricas de um NODE, apenas adiciono ele na lista de prioridades com valor 0
 				mapOfNodePriorities[node] = 0
 
-				log.Println(fmt.Sprintf("[%s] Skip Metrics Priority! Error on NodeMetricses of Metrics Server -> %s", node.Name, err))
+				log.Println(fmt.Sprintf("[%-16s] Skip Metrics Priority! Error on NodeMetricses of Metrics Server -> %s", node.Name, err))
 
 				continue
 			}
@@ -726,7 +725,7 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 			// 		//se não for possível calcular as métricas de um NODE, apenas adiciono ele na lista de prioridades com valor 0
 			// 		mapOfNodePriorities[node] = 0
 
-			// 		log.Println(fmt.Sprintf("[%s] Skip Metrics Priority! Error on NodeMetricses of Kube State Metrics -> %s", node.Name, err))
+			// 		log.Println(fmt.Sprintf("[%-16s] Skip Metrics Priority! Error on NodeMetricses of Kube State Metrics -> %s", node.Name, err))
 
 			// 		continue
 			// 	}
@@ -756,7 +755,7 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 		}
 
 		if scheduler.debugAffinityEvents {
-			msgNodeUsage := fmt.Sprintf("Node [%s] usage -> CPU [%d/%d] Memory [%d/%d] POD [%d/%d]", node.Name, cpuCapacityValue, cpuUsageValue, memCapacityValue, memUsageValue, podCapacityValue, podUsageValue)
+			msgNodeUsage := fmt.Sprintf("Node [%-16s] usage -> CPU [%d/%d] Memory [%d/%d] POD [%d/%d]", node.Name, cpuCapacityValue, cpuUsageValue, memCapacityValue, memUsageValue, podCapacityValue, podUsageValue)
 
 			log.Println(msgNodeUsage)
 		}
@@ -802,7 +801,7 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 		})
 
 		for _, nodePriority := range arrOfNodePriorities {
-			msgNodePriority := fmt.Sprintf("--> %s [%f]", nodePriority.node.Name, nodePriority.priorityValue)
+			msgNodePriority := fmt.Sprintf("--> %-16s [%f]", nodePriority.node.Name, nodePriority.priorityValue)
 
 			log.Println(msgNodePriority)
 		}
