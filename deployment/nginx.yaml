@@ -19,5 +19,12 @@ spec:
       - name: nginx
         image: nginx:latest
         imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+              cpu: "200m"
+              memory: "128Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
         ports:
         - containerPort: 8080
