@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stress-memory
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: stress-memory
+  template:
+    metadata:
+      labels:
+        app: stress-memory
+      annotations:
+        lfaltran.io/deployment.node.log: "true"
+    spec:
+      schedulerName: label-affinity-scheduler
+      containers:
+      - name: stress-memory
+        image: polinux/stress
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            memory: "100Mi"
+          limits:
+            memory: "200Mi"
+        command: ["stress"]
+        args: ["--vm", "1", "--vm-bytes", "150M", "--vm-hang", "1"]

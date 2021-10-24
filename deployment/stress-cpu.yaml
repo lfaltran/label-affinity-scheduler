@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stress-cpu
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: stress-cpu
+  template:
+    metadata:
+      labels:
+        app: stress-cpu
+      annotations:
+        lfaltran.io/deployment.node.log: "true"
+    spec:
+      schedulerName: label-affinity-scheduler
+      containers:
+      - name: stress-cpu
+        image: vish/stress
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: "100m"
+          limits:
+            cpu: "300m"
+        # args:
+        # - -cpus
+        # - "2"

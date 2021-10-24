@@ -20,6 +20,6 @@ spec:
         - name: label-affinity-scheduler
           image: lfaltran/label-affinity-scheduler:1.8
           args: ["label-affinity-scheduler", "ppgcomp.unioeste.br", "resource-limits", "true"]
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
       nodeSelector:
         kubernetes.io/hostname: k8smaster

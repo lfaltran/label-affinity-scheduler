@@ -7,10 +7,12 @@ Nova funcionalidade para flexibilitar a estratégia para coleta de consumo compu
 ### Added
 - Início do desenvolvimento da integração com a API de Métricas “Kube State Metrics”
 - Nova estratégia para definição do consumo computacional de cada nó participante do cluster, extraindo dados dos limites definidos na tag “resources”
+- Aplicado RPAD no nome dos nós computacionais para melhor organização dos logs
 
 ### Changed
 
 ### Fixed
+- Ajuste na exibição de logs ref. ao resultado na distribuição dos PODs, para nao considerar o nós computacionais c/ "TAINTS" (indisponíveis no cluster)
 
 ## [1.7] - 2021-07-11
 

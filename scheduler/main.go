@@ -29,6 +29,8 @@ import (
 	metricsserver "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
+var nodeNamePaddingSize int
+
 //POJO de apoio para realizar a gestão de PODS e o processo de Bind
 type Scheduler struct {
 	name                string
@@ -57,6 +59,9 @@ type NodePriority struct {
 
 //inicio da execução, disponibilizando o Custom Scheduler como um Deployment
 func main() {
+	//variáveis de apoio na execução
+	nodeNamePaddingSize = 16 //tamanho do PADDING p/ nome dos nós computacionais
+
 	//inicialização do ambiente
 	log.SetFlags(0)
 
@@ -136,14 +141,15 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 
 			//verificando se o node possui algum TAINT ref. a NoSchedule, pois nestes casos, ele não poderá receber nenhum POD
 			hasTaints := checkIfNodeHasTaints(node)
+			nodeStatus := ""
 
 			if hasTaints {
-				log.Printf("Node %s unavailable", node.GetName())
-
-				return
+				nodeStatus = "unavailable"
+			} else {
+				nodeStatus = "added to store"
 			}
 
-			log.Printf("New Node Added to Store: %s", node.GetName())
+			log.Println(fmt.Sprintf("Node [%-*s] %s", nodeNamePaddingSize, node.Name, nodeStatus))
 		},
 	})
 
@@ -370,14 +376,14 @@ func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1
 
 		if hasTaints {
 			if scheduler.debugAffinityEvents {
-				log.Println("Node " + node.Name + " tainted! Skipped")
+				log.Println(fmt.Sprintf("Node [%-16s] tainted! Skipped", node.Name))
 			}
 
 			continue
 		}
 
 		if scheduler.debugAffinityEvents {
-			log.Println("Node " + node.Name + " labels for custom scheduler " + scheduler.name)
+			log.Println(fmt.Sprintf("Node [%-16s] labels for custom scheduler %s", node.Name, scheduler.name))
 		}
 
 		mapOfNodeLabelsCustomSchedulerStrategy := make(map[string]string)
@@ -437,7 +443,7 @@ func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1
 			node := nodeLabelAffinity.node
 			affinityValue := nodeLabelAffinity.affinityValue
 
-			log.Println(fmt.Sprintf("--> %-16s [%f]", node, affinityValue))
+			log.Println(fmt.Sprintf("--> %-16s [%f]", node.Name, affinityValue))
 		}
 	}
 
@@ -747,9 +753,29 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 			for _, podFromCurrentNode := range (*podListFromCurrentNode).Items {
 				arrOfContainersFromPod := podFromCurrentNode.Spec.Containers
 
+				//se houve problema na execução do POD, não considero o mesmo no consumo do nó computacional
+				if podFromCurrentNode.Status.Phase == "Failed" {
+					continue
+				}
+
 				for _, containerFromPod := range arrOfContainersFromPod {
-					cpuUsageValue += containerFromPod.Resources.Limits.Cpu().MilliValue()
-					memUsageValue += containerFromPod.Resources.Limits.Memory().Value()
+					podCPULimits := containerFromPod.Resources.Limits.Cpu().MilliValue()
+					podMemoryLimits := containerFromPod.Resources.Limits.Memory().Value()
+
+					if podCPULimits <= 0 {
+						podCPULimits = 100 //0.1 cpu - 100 milicpu
+					}
+
+					if podMemoryLimits <= 0 {
+						podMemoryLimits = 67108864 //64mb
+					}
+
+					cpuUsageValue += podCPULimits
+					memUsageValue += podMemoryLimits
+
+					if scheduler.debugAffinityEvents {
+						log.Println(fmt.Sprintf("Pod [%s] Limits -> CPU [%d] Memory [%d]", podFromCurrentNode.Name, podCPULimits, podMemoryLimits))
+					}
 				}
 			}
 		}
@@ -952,7 +978,14 @@ func (scheduler *Scheduler) printDeploymentNodeAllocation(deployment *appsV1.Dep
 		podAllocatedOnNode := nodePodDistribution.podCount
 		podAllocatableSpaceOnNode := podLimitOnNode - podAllocatedOnNode
 
-		log.Println(fmt.Sprintf("[%-16s] "+strings.Repeat("+", podAllocatedOnNode)+strings.Repeat("-", podAllocatableSpaceOnNode), node.Name))
+		//verificando se o nó possui alguma restrição e não tem nenhum POD alocado a ele, neste caso, ignoro da exibição de log
+		hasTaints := checkIfNodeHasTaints(node)
+
+		if hasTaints && podAllocatedOnNode <= 0 {
+			continue
+		}
+
+		log.Println(fmt.Sprintf("[%-*s] "+strings.Repeat("+", podAllocatedOnNode)+strings.Repeat("-", podAllocatableSpaceOnNode), nodeNamePaddingSize, node.Name))
 	}
 }
 
