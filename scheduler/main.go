@@ -195,6 +195,15 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 				}
 
 				log.Println(message)
+
+				//extraindo o Deployment diretamente vinculado ao POD
+				deploymentName := pod.Labels["app"]
+
+				deployment, err := scheduler.clientset.AppsV1().Deployments(pod.Namespace).Get(context, deploymentName, metaV1.GetOptions{})
+
+				if err == nil {
+					go scheduler.printDeploymentNodeAllocation(deployment, nodeLister, "Pods.DeleteFunc")
+				}
 			}
 		},
 	})
@@ -251,7 +260,7 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 			}
 
 			//a partir daqui o Deployment esta supostamente com as atualizações finalizadas
-			go scheduler.printDeploymentNodeAllocation(deployment, nodeLister)
+			go scheduler.printDeploymentNodeAllocation(deployment, nodeLister, "Deployments.UpdateFunc")
 		},
 	})
 
@@ -911,7 +920,7 @@ func (scheduler *Scheduler) emitEvent(pod *coreV1.Pod, reason string, message st
 	return nil
 }
 
-func (scheduler *Scheduler) printDeploymentNodeAllocation(deployment *appsV1.Deployment, nodeLister listersV1.NodeLister) {
+func (scheduler *Scheduler) printDeploymentNodeAllocation(deployment *appsV1.Deployment, nodeLister listersV1.NodeLister, sourceExecution string) {
 	//listar todos os Nodes
 	listOfNodes, err := nodeLister.List(labels.Everything())
 
@@ -936,6 +945,8 @@ func (scheduler *Scheduler) printDeploymentNodeAllocation(deployment *appsV1.Dep
 	podListFromCurrentDeployment, err := scheduler.clientset.CoreV1().Pods(deployment.Namespace).List(context.TODO(), listOptionsForPodFilter)
 
 	if err != nil {
+		// log.Println(fmt.Sprintf("[%s] erro podListFromCurrentDeployment [%s]", sourceExecution, err))
+
 		return
 	}
 
@@ -943,7 +954,11 @@ func (scheduler *Scheduler) printDeploymentNodeAllocation(deployment *appsV1.Dep
 	deploymentStatus := deployment.Status
 	deploymentPodCount := int32(len(podListFromCurrentDeployment.Items))
 
+	// log.Println(fmt.Sprintf("[%s] current status => %s", sourceExecution, deploymentStatus.String()))
+
 	if deploymentStatus.Replicas != deploymentPodCount {
+		// log.Println(fmt.Sprintf("[%s] erro deploymentPodCount atual [%d] esperado [%d]", sourceExecution, deploymentStatus.Replicas, deploymentPodCount))
+
 		return
 	}
 

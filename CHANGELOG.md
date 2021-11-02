@@ -1,5 +1,15 @@
 # Change Log
 
+## [1.9] - 2021-11-02
+
+Ajustes na exibição de log durante processo de "scale down" dos deployments
+
+### Added
+
+### Changed
+
+### Fixed
+- Melhoria no processo de exclusão de PODs (scale down), para que notifique o debug do deployment a cada objeto removido
 ## [1.8] - 2021-10-23
 
 Nova funcionalidade para flexibilitar a estratégia para coleta de consumo computacional de cada nó participante do cluster
