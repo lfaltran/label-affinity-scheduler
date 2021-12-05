@@ -18,6 +18,7 @@ import (
 	coreV1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -30,12 +31,14 @@ import (
 )
 
 var nodeNamePaddingSize int
+var defaultSchedulerName string
 
 //POJO de apoio para realizar a gestão de PODS e o processo de Bind
 type Scheduler struct {
 	name                string
 	labelDNSPrefix      string
 	metricsStrategy     string
+	simulationOnly      bool
 	debugAffinityEvents bool
 	context             context.Context
 	clientset           *kubernetes.Clientset
@@ -61,6 +64,7 @@ type NodePriority struct {
 func main() {
 	//variáveis de apoio na execução
 	nodeNamePaddingSize = 16 //tamanho do PADDING p/ nome dos nós computacionais
+	defaultSchedulerName = "kube-scheduler"
 
 	//inicialização do ambiente
 	log.SetFlags(0)
@@ -70,7 +74,15 @@ func main() {
 	labelDNSPrefix := os.Args[2]
 	metricsStrategy := os.Args[3]
 
-	debugAffinityEvents, err := strconv.ParseBool(os.Args[4])
+	//verificando se a execução será realizada em modo simulação
+	simulationOnly, err := strconv.ParseBool(os.Args[4])
+
+	if err != nil {
+		simulationOnly = false
+	}
+
+	//verificando se será realizado o debug das informações no console
+	debugAffinityEvents, err := strconv.ParseBool(os.Args[5])
 
 	if err != nil {
 		debugAffinityEvents = false
@@ -84,6 +96,7 @@ func main() {
 		name:                schedulerName,
 		labelDNSPrefix:      labelDNSPrefix,
 		metricsStrategy:     metricsStrategy,
+		simulationOnly:      simulationOnly,
 		debugAffinityEvents: debugAffinityEvents,
 	}
 
@@ -186,7 +199,7 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 				message := fmt.Sprintf("Pod [%s/%s] removed from Node [%-16s]", pod.Namespace, pod.Name, pod.Spec.NodeName)
 
 				//gerando eventos no console do Kubernetes para acompanhar o custom scheduler
-				err = scheduler.emitEvent(pod, "Unscheduled", message)
+				err = scheduler.emitEvent(scheduler.name, "Pod", pod.Namespace, pod.Name, "", pod.UID, "Unscheduled", message)
 
 				if err != nil {
 					log.Println("failed to emit unscheduled event", err.Error())
@@ -203,6 +216,43 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 
 				if err == nil {
 					go scheduler.printDeploymentNodeAllocation(deployment, nodeLister, "Pods.DeleteFunc")
+				}
+			}
+		},
+		UpdateFunc: func(oldObj interface{}, newObj interface{}) {
+			pod, podOk := newObj.(*coreV1.Pod)
+
+			if !podOk {
+				log.Println("this is not a Pod!")
+
+				return
+			}
+
+			if pod.Status.Phase != "Running" {
+				return
+			}
+
+			// log.Println(pod)
+			// log.Println(fmt.Sprintf("Pod [%s] Node [%s] Phase [%s]", pod.Name, pod.Spec.NodeName, pod.Status.Phase))
+
+			//extraindo o Deployment diretamente vinculado ao POD
+			deploymentNameOfPod := pod.Labels["app"]
+
+			//gerando evento de notificação ref. a novo POD vinculado a um DEPLOYMENT
+			deploymentOfPod, err := scheduler.clientset.AppsV1().Deployments(pod.Namespace).Get(scheduler.context, deploymentNameOfPod, metaV1.GetOptions{})
+
+			if err == nil {
+				message := fmt.Sprintf("Scheduler [%s] assigned POD [%s/%s] to [%-16s]", pod.Spec.SchedulerName, pod.Namespace, pod.Name, pod.Spec.NodeName)
+
+				log.Println(message)
+
+				//evento vinculado ao DEPLOYMENT
+				err = scheduler.emitEvent(defaultSchedulerName, "Deployment", deploymentOfPod.Namespace, deploymentOfPod.Name, pod.Name, deploymentOfPod.UID, "PodScheduled", message)
+
+				if err != nil {
+					log.Println("failed to emit scheduled event for DEPLOYMENT", err.Error())
+
+					return
 				}
 			}
 		},
@@ -304,13 +354,14 @@ func (scheduler *Scheduler) schedulePodInQueue() {
 	}
 
 	//log no console ref. ao bind realizado
-	message := fmt.Sprintf("Custom Scheduler [%s] assigned POD [%s/%s] to [%-16s]", scheduler.name, podQueued.Namespace, podQueued.Name, nodeForPodBind.Name)
+	message := fmt.Sprintf("Scheduler [%s] assigned POD [%s/%s] to [%-16s]", scheduler.name, podQueued.Namespace, podQueued.Name, nodeForPodBind.Name)
 
 	//gerando eventos no console do Kubernetes para acompanhar o custom scheduler
-	err = scheduler.emitEvent(podQueued, "Scheduled", message)
+	//evento vinculado ao POD
+	err = scheduler.emitEvent(scheduler.name, "Pod", podQueued.Namespace, podQueued.Name, "", podQueued.UID, "Scheduled", message)
 
 	if err != nil {
-		log.Println("failed to emit scheduled event", err.Error())
+		log.Println("failed to emit scheduled event for POD", err.Error())
 
 		return
 	}
@@ -889,27 +940,32 @@ func checkIfNodeHasTaints(node *coreV1.Node) bool {
 }
 
 //gerando eventos no console do Kubernetes para acompanhamento
-func (scheduler *Scheduler) emitEvent(pod *coreV1.Pod, reason string, message string) error {
+func (scheduler *Scheduler) emitEvent(sourceName string, objKind string, objNamespace string, objName string, sufixUnqObjName string, objUID types.UID, reason string, message string) error {
 	timestamp := time.Now().UTC()
+	unqObjName := objName
 
-	_, err := scheduler.clientset.CoreV1().Events(pod.Namespace).Create(context.TODO(), &coreV1.Event{
+	if sufixUnqObjName != "" {
+		unqObjName = fmt.Sprintf("%s.%s", objName, sufixUnqObjName)
+	}
+
+	_, err := scheduler.clientset.CoreV1().Events(objNamespace).Create(context.TODO(), &coreV1.Event{
 		Count:          1,
-		Message:        message,
 		Reason:         reason,
+		Message:        message,
 		LastTimestamp:  metaV1.NewTime(timestamp),
 		FirstTimestamp: metaV1.NewTime(timestamp),
 		Type:           "Normal",
 		Source: coreV1.EventSource{
-			Component: scheduler.name,
+			Component: sourceName,
 		},
 		InvolvedObject: coreV1.ObjectReference{
-			Kind:      "Pod",
-			Name:      pod.Name,
-			Namespace: pod.Namespace,
-			UID:       pod.UID,
+			Kind:      objKind,
+			Namespace: objNamespace,
+			Name:      objName,
+			UID:       objUID,
 		},
 		ObjectMeta: metaV1.ObjectMeta{
-			GenerateName: pod.Name + "-",
+			GenerateName: unqObjName + "-",
 		},
 	}, metaV1.CreateOptions{})
 
