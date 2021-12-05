@@ -1,5 +1,18 @@
 # Change Log
 
+## [1.10] - 2021-12-05
+
+Melhoria no processo de geração dos eventos ref. a "scale up" e "scale down"
+
+### Added
+- Adicionando novo evento no objeto "Deployment", para faciliar o acompanhamento e visualização do desempenho geral da distribuição de PODs
+
+### Changed
+- Ajuste nas chamadas de eventos referente ao "scale up" e "scale down", sendo agora realizado durante no "Event Handler" de Pods, no método "UpdateFunc"
+
+### Fixed
+- Correção no monitoramento de PODs em que o "scheduler" utilizado é diferente do ao personalizado, para que também gere os eventos de "scale up" e "scale down"
+
 ## [1.9] - 2021-11-02
 
 Ajustes na exibição de log durante processo de "scale down" dos deployments

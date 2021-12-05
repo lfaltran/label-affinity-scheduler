@@ -196,7 +196,7 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 
 			if pod.Spec.NodeName != "" && pod.Spec.SchedulerName == scheduler.name {
 				//log no console ref. exclusão de Pod
-				message := fmt.Sprintf("Pod [%s/%s] removed from Node [%-16s]", pod.Namespace, pod.Name, pod.Spec.NodeName)
+				message := fmt.Sprintf("Pod [%s/%s] removed from Node [%-*s]", pod.Namespace, pod.Name, nodeNamePaddingSize, pod.Spec.NodeName)
 
 				//gerando eventos no console do Kubernetes para acompanhar o custom scheduler
 				err = scheduler.emitEvent(scheduler.name, "Pod", pod.Namespace, pod.Name, "", pod.UID, "Unscheduled", message)
@@ -242,7 +242,7 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 			deploymentOfPod, err := scheduler.clientset.AppsV1().Deployments(pod.Namespace).Get(scheduler.context, deploymentNameOfPod, metaV1.GetOptions{})
 
 			if err == nil {
-				message := fmt.Sprintf("Scheduler [%s] assigned POD [%s/%s] to [%-16s]", pod.Spec.SchedulerName, pod.Namespace, pod.Name, pod.Spec.NodeName)
+				message := fmt.Sprintf("Scheduler [%s] assigned POD [%s/%s] to [%-*s]", pod.Spec.SchedulerName, pod.Namespace, pod.Name, nodeNamePaddingSize, pod.Spec.NodeName)
 
 				log.Println(message)
 
@@ -354,7 +354,7 @@ func (scheduler *Scheduler) schedulePodInQueue() {
 	}
 
 	//log no console ref. ao bind realizado
-	message := fmt.Sprintf("Scheduler [%s] assigned POD [%s/%s] to [%-16s]", scheduler.name, podQueued.Namespace, podQueued.Name, nodeForPodBind.Name)
+	message := fmt.Sprintf("Scheduler [%s] assigned POD [%s/%s] to [%-*s]", scheduler.name, podQueued.Namespace, podQueued.Name, nodeNamePaddingSize, nodeForPodBind.Name)
 
 	//gerando eventos no console do Kubernetes para acompanhar o custom scheduler
 	//evento vinculado ao POD
