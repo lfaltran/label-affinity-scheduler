@@ -242,10 +242,6 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 			deploymentOfPod, err := scheduler.clientset.AppsV1().Deployments(pod.Namespace).Get(scheduler.context, deploymentNameOfPod, metaV1.GetOptions{})
 
 			if err == nil {
-				message := fmt.Sprintf("Scheduler [%s] assigned POD [%s/%s] to [%-*s]", pod.Spec.SchedulerName, pod.Namespace, pod.Name, nodeNamePaddingSize, pod.Spec.NodeName)
-
-				log.Println(message)
-
 				//abaixo eh realizado um gerenciamento dos eventos no objeto DEPLOYMENT
 				kind := "Deployment"
 				reason := "PodScheduled"
@@ -268,6 +264,10 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 
 				//se nao houver evento ainda p/ o objeto atual, gera um registro
 				if emitNewEvent {
+					message := fmt.Sprintf("Scheduler [%s] assigned POD [%s/%s] to [%-*s]", pod.Spec.SchedulerName, pod.Namespace, pod.Name, nodeNamePaddingSize, pod.Spec.NodeName)
+
+					log.Println(message)
+
 					//evento vinculado ao DEPLOYMENT
 					err = scheduler.emitEvent(defaultSchedulerName, kind, deploymentOfPod.Namespace, deploymentOfPod.Name, pod.Name, deploymentOfPod.UID, reason, message)
 
