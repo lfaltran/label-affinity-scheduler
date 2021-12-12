@@ -5,12 +5,16 @@
 Atualização de versão do Go Client: 1.16 > 1.17.5
 Atualização de versão do Alpine: 3.13 > 3.15
 Melhoria na geração de eventos ref. a vinculo entre POD e NODE
+Melhoria de desempenho na atribuição dos nós computacionais
 
 ### Added
 - Adicionada verificação de eventos vinculados ao DEPLOYMENT para evitar disparo repetitivo
 - Revisão do arquivo RBAC p/ adicionar a permissão do monitoramento de EVENTS do Kubernetes
+- Melhoria durante depuração de desempenho durante a listagem dos PODs vinculados aos NODEs
+
 ### Changed
 - Ajuste para gerar os eventos de vinculo entre POD e NODE apenas se a operação foi bem sucedida
+- Novo parâmetro p/ permitir que durante a execução do custom scheduler seja ignorado o calculo de métricas dos nós computacionais
 
 ### Fixed
 - Correção no disparo de eventos ref. a PODs que não estejam em situação RUNNING porém já foram alocados à um Nó Computacional
