@@ -235,6 +235,11 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 			// 	return
 			// }
 
+			//se não houve atribuição de NODE ao POD, não gero nenhum evento p/ ele
+			if pod.Spec.NodeName == "" {
+				return
+			}
+
 			//extraindo o Deployment diretamente vinculado ao POD
 			deploymentNameOfPod := pod.Labels["app"]
 
