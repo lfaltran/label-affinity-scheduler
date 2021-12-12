@@ -229,7 +229,7 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 			}
 
 			// log.Println(pod)
-			log.Println(fmt.Sprintf("Pod [%s] Node [%s] Phase [%s]", pod.Name, pod.Spec.NodeName, pod.Status.Phase))
+			// log.Println(fmt.Sprintf("Pod [%s] Node [%s] Phase [%s]", pod.Name, pod.Spec.NodeName, pod.Status.Phase))
 
 			// if pod.Status.Phase != "Running" {
 			// 	return
@@ -244,20 +244,30 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 			if err == nil {
 				message := fmt.Sprintf("Scheduler [%s] assigned POD [%s/%s] to [%-*s]", pod.Spec.SchedulerName, pod.Namespace, pod.Name, nodeNamePaddingSize, pod.Spec.NodeName)
 
-				log.Println(message)
+				// log.Println(message)
 
 				//abaixo eh realizado um gerenciamento dos eventos no objeto DEPLOYMENT
 				kind := "Deployment"
 				reason := "PodScheduled"
+				emitNewEvent := true
 
 				//verificando se jah não foi gerado um evento ref. ao DEPLOYMENT
 				listOfObjectEvents := scheduler.listObjectEvents(kind, deploymentOfPod.Namespace, deploymentOfPod.Name, reason)
 
-				log.Println(listOfObjectEvents.Items)
-				log.Println(fmt.Sprintf("Size of listOfObjectEvents.Items => %v", len(listOfObjectEvents.Items)))
+				// log.Println(listOfObjectEvents.Items)
+				// log.Println(fmt.Sprintf("Size of listOfObjectEvents.Items => %v", len(listOfObjectEvents.Items)))
+
+				//percorrendo os eventos do Deployment p/ evitar repetidos
+				for _, event := range listOfObjectEvents.Items {
+					if strings.Contains(event.Message, pod.Name) {
+						emitNewEvent = false
+
+						break
+					}
+				}
 
 				//se nao houver evento ainda p/ o objeto atual, gera um registro
-				if len(listOfObjectEvents.Items) == 0 {
+				if emitNewEvent {
 					//evento vinculado ao DEPLOYMENT
 					err = scheduler.emitEvent(defaultSchedulerName, kind, deploymentOfPod.Namespace, deploymentOfPod.Name, pod.Name, deploymentOfPod.UID, reason, message)
 
@@ -956,12 +966,8 @@ func checkIfNodeHasTaints(node *coreV1.Node) bool {
 func (scheduler *Scheduler) listObjectEvents(objKind string, objNamespace string, objName string, reason string) *coreV1.EventList {
 	fieldSelectOfObjectEvent := fmt.Sprintf("reason=%s,involvedObject.kind=%s,involvedObject.name=%s", reason, objKind, objName)
 
-	log.Println("listObjectEvents -> " + fieldSelectOfObjectEvent)
-
 	listOfObjectEvents, err := scheduler.clientset.CoreV1().Events(objNamespace).List(context.TODO(), metaV1.ListOptions{
 		FieldSelector: fieldSelectOfObjectEvent,
-		// FieldSelector: "involvedObject.name=" + objName,
-		// TypeMeta:      metaV1.TypeMeta{Kind: objKind},
 	})
 
 	if err != nil {

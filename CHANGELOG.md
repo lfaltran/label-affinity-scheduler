@@ -7,7 +7,7 @@ Atualização de versão do Alpine: 3.13 > 3.15
 
 ### Added
 - Adicionada verificação de eventos vinculados ao DEPLOYMENT para evitar disparo repetitivo
-
+- Revisão do arquivo RBAC p/ adicionar a permissão do monitoramento de EVENTS do Kubernetes
 ### Changed
 - 
 
