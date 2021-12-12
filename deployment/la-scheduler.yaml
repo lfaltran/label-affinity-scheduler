@@ -18,8 +18,8 @@ spec:
       serviceAccount: las-service-account
       containers:
         - name: label-affinity-scheduler
-          image: lfaltran/label-affinity-scheduler:1.10
-          args: ["label-affinity-scheduler", "ppgcomp.unioeste.br", "resource-limits", "true", "true"]
+          image: lfaltran/label-affinity-scheduler:1.11
+          args: ["label-affinity-scheduler", "ppgcomp.unioeste.br", "resource-limits", "true", "false"]
           imagePullPolicy: Always
       nodeSelector:
         kubernetes.io/hostname: k8smaster

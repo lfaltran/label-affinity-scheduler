@@ -228,12 +228,12 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 				return
 			}
 
-			if pod.Status.Phase != "Running" {
-				return
-			}
-
 			// log.Println(pod)
-			// log.Println(fmt.Sprintf("Pod [%s] Node [%s] Phase [%s]", pod.Name, pod.Spec.NodeName, pod.Status.Phase))
+			log.Println(fmt.Sprintf("Pod [%s] Node [%s] Phase [%s]", pod.Name, pod.Spec.NodeName, pod.Status.Phase))
+
+			// if pod.Status.Phase != "Running" {
+			// 	return
+			// }
 
 			//extraindo o Deployment diretamente vinculado ao POD
 			deploymentNameOfPod := pod.Labels["app"]
@@ -246,13 +246,26 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 
 				log.Println(message)
 
-				//evento vinculado ao DEPLOYMENT
-				err = scheduler.emitEvent(defaultSchedulerName, "Deployment", deploymentOfPod.Namespace, deploymentOfPod.Name, pod.Name, deploymentOfPod.UID, "PodScheduled", message)
+				//abaixo eh realizado um gerenciamento dos eventos no objeto DEPLOYMENT
+				kind := "Deployment"
+				reason := "PodScheduled"
 
-				if err != nil {
-					log.Println("failed to emit scheduled event for DEPLOYMENT", err.Error())
+				//verificando se jah não foi gerado um evento ref. ao DEPLOYMENT
+				listOfObjectEvents := scheduler.listObjectEvents(kind, deploymentOfPod.Namespace, deploymentOfPod.Name, reason)
 
-					return
+				log.Println(listOfObjectEvents.Items)
+				log.Println(fmt.Sprintf("Size of listOfObjectEvents.Items => %v", len(listOfObjectEvents.Items)))
+
+				//se nao houver evento ainda p/ o objeto atual, gera um registro
+				if len(listOfObjectEvents.Items) == 0 {
+					//evento vinculado ao DEPLOYMENT
+					err = scheduler.emitEvent(defaultSchedulerName, kind, deploymentOfPod.Namespace, deploymentOfPod.Name, pod.Name, deploymentOfPod.UID, reason, message)
+
+					if err != nil {
+						log.Println("failed to emit scheduled event for DEPLOYMENT", err.Error())
+
+						return
+					}
 				}
 			}
 		},
@@ -937,6 +950,19 @@ func checkIfNodeHasTaints(node *coreV1.Node) bool {
 	}
 
 	return false
+}
+
+//verificando se jah não houve um evento gerado com os parametros informados
+func (scheduler *Scheduler) listObjectEvents(objKind string, objNamespace string, objName string, reason string) *coreV1.EventList {
+	listOfObjectEvents, _ := scheduler.clientset.CoreV1().Events(objNamespace).List(context.TODO(), metaV1.ListOptions{
+		FieldSelector: fmt.Sprintf("reason=%s,involvedObject.kind=%s,involvedObject.name=%s", reason, objKind, objName),
+		// FieldSelector: "involvedObject.name=" + objName,
+		// TypeMeta:      metaV1.TypeMeta{Kind: objKind},
+	})
+
+	//FieldSelector: fmt.Sprintf("reason=%s,involvedObject.kind=%s,involvedObject.name=%s", reason, objKind, objName),
+
+	return listOfObjectEvents
 }
 
 //gerando eventos no console do Kubernetes para acompanhamento

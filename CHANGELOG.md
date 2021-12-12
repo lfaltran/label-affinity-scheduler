@@ -1,5 +1,20 @@
 # Change Log
 
+## [1.11] - 2021-12-12
+
+Atualização de versão do Go Client: 1.16 > 1.17.5
+Atualização de versão do Alpine: 3.13 > 3.15
+
+### Added
+- Adicionada verificação de eventos vinculados ao DEPLOYMENT para evitar disparo repetitivo
+
+### Changed
+- 
+
+### Fixed
+- Ajuste no disparo de eventos ref. a PODs que não estejam em situação RUNNING porém já foram alocados à um Nó Computacional
+
+
 ## [1.10] - 2021-12-05
 
 Melhoria no processo de geração dos eventos ref. a "scale up" e "scale down"

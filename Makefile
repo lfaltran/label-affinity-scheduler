@@ -12,7 +12,7 @@ COMMIT_HASH ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 BUILD_DATE ?= $(shell date +%FT%T%z)
 LDFLAGS += -X main.Version=${VERSION} -X main.CommitHash=${COMMIT_HASH} -X main.BuildDate=${BUILD_DATE}
 
-GOLANG_VERSION = 1.16
+GOLANG_VERSION = 1.17.5
 
 .PHONY: build
 build: GOARGS += -tags "${GOTAGS}" -ldflags "${LDFLAGS}" -o ${BUILD_DIR}/${BINARY_NAME}
