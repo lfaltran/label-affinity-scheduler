@@ -954,10 +954,14 @@ func checkIfNodeHasTaints(node *coreV1.Node) bool {
 
 //verificando se jah não houve um evento gerado com os parametros informados
 func (scheduler *Scheduler) listObjectEvents(objKind string, objNamespace string, objName string, reason string) *coreV1.EventList {
+	fieldSelectOfObjectEvent := fmt.Sprintf("reason=%s,involvedObject.kind=%s,involvedObject.name=%s", reason, objKind, objName)
+
+	log.Println("listObjectEvents -> " + fieldSelectOfObjectEvent)
+
 	listOfObjectEvents, _ := scheduler.clientset.CoreV1().Events(objNamespace).List(context.TODO(), metaV1.ListOptions{
-		FieldSelector: fmt.Sprintf("reason=%s,involvedObject.kind=%s,involvedObject.name=%s", reason, objKind, objName),
-		// FieldSelector: "involvedObject.name=" + objName,
-		// TypeMeta:      metaV1.TypeMeta{Kind: objKind},
+		// FieldSelector: fieldSelectOfObjectEvent,
+		FieldSelector: "involvedObject.name=" + objName,
+		TypeMeta:      metaV1.TypeMeta{Kind: objKind},
 	})
 
 	//FieldSelector: fmt.Sprintf("reason=%s,involvedObject.kind=%s,involvedObject.name=%s", reason, objKind, objName),
