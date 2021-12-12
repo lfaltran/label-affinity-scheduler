@@ -244,7 +244,7 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 			if err == nil {
 				message := fmt.Sprintf("Scheduler [%s] assigned POD [%s/%s] to [%-*s]", pod.Spec.SchedulerName, pod.Namespace, pod.Name, nodeNamePaddingSize, pod.Spec.NodeName)
 
-				// log.Println(message)
+				log.Println(message)
 
 				//abaixo eh realizado um gerenciamento dos eventos no objeto DEPLOYMENT
 				kind := "Deployment"
