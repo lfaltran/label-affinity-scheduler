@@ -16,6 +16,7 @@ import (
 
 	appsV1 "k8s.io/api/apps/v1"
 	coreV1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -38,7 +39,7 @@ type Scheduler struct {
 	name                string
 	labelDNSPrefix      string
 	metricsStrategy     string
-	simulationOnly      bool
+	computeNodeMetrics  bool
 	debugAffinityEvents bool
 	context             context.Context
 	clientset           *kubernetes.Clientset
@@ -74,11 +75,11 @@ func main() {
 	labelDNSPrefix := os.Args[2]
 	metricsStrategy := os.Args[3]
 
-	//verificando se a execução será realizada em modo simulação
-	simulationOnly, err := strconv.ParseBool(os.Args[4])
+	//verificando se a execução irá calcular a capacidade ociosa dos nós computacionais
+	computeNodeMetrics, err := strconv.ParseBool(os.Args[4])
 
 	if err != nil {
-		simulationOnly = false
+		computeNodeMetrics = false
 	}
 
 	//verificando se será realizado o debug das informações no console
@@ -96,7 +97,7 @@ func main() {
 		name:                schedulerName,
 		labelDNSPrefix:      labelDNSPrefix,
 		metricsStrategy:     metricsStrategy,
-		simulationOnly:      simulationOnly,
+		computeNodeMetrics:  computeNodeMetrics,
 		debugAffinityEvents: debugAffinityEvents,
 	}
 
@@ -775,103 +776,131 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 		memUsageValue := int64(0)
 		podUsageValue := int64(0)
 
-		//calculando a quantidade de PODs em execução no nó atual
-		podListFromCurrentNode, err := scheduler.clientset.CoreV1().Pods(metaV1.NamespaceAll).List(context.TODO(), metaV1.ListOptions{
-			FieldSelector: "spec.nodeName=" + node.Name,
-		})
+		//se foi definido que haverá calculo das métricas de cada nó computacional, inicio o processo
+		if !scheduler.computeNodeMetrics {
+			cpuUsageValue = 100
+			memUsageValue = 67108864
+			podUsageValue = 1
 
-		if err != nil {
-			log.Println(fmt.Sprintf("[%s] Skip Metrics Priority! Error on PodList -> %s", node.Name, err))
+			if scheduler.debugAffinityEvents {
+				log.Println(fmt.Sprintf("[%s] Skip Node Compute Metrics!", node.Name))
+			}
+		} else {
+			listOfNodePods := make([]v1.Pod, 0)
 
-			continue
-		}
+			if scheduler.debugAffinityEvents {
+				log.Println(fmt.Sprintf("Begin PodList on Node [%-16s]", node.Name))
+			}
 
-		//o calculo da quantidade de PODs em uso será realizado a partir do tamanho da lista encontrada pela busca de PODs vinculados ao nó
-		podUsageValue = int64(len(podListFromCurrentNode.Items))
+			//calculando a quantidade de PODs em execução no nó atual
+			podListFromCurrentNode, err := scheduler.clientset.CoreV1().Pods(metaV1.NamespaceAll).List(context.TODO(), metaV1.ListOptions{
+				FieldSelector: "spec.nodeName=" + node.Name,
+			})
 
-		//TODO buscar método alternativo p/ calculo da ociosidade computacional, estou tendo mtos problemas com o Metrics Server
-		//obtendo as métricas de uso ref. ao NODE atual
-		if scheduler.metricsStrategy == "metrics-server" {
-			metricsServerConfig, err := metricsserver.NewForConfig(configMetrics)
+			if scheduler.debugAffinityEvents {
+				log.Println(fmt.Sprintf("End PodList on Node [%-16s]", node.Name))
+			}
 
-			//utilizando a API "MetricsServer"
-			nodeMetrics, err := metricsServerConfig.MetricsV1beta1().NodeMetricses().Get(context.TODO(), node.Name, metaV1.GetOptions{})
-
-			//problema p/ obter dados via API de métricas
 			if err != nil {
-				//se não for possível calcular as métricas de um NODE, apenas adiciono ele na lista de prioridades com valor 0
-				mapOfNodePriorities[node] = 0
-
-				log.Println(fmt.Sprintf("[%-16s] Skip Metrics Priority! Error on NodeMetricses of Metrics Server -> %s", node.Name, err))
+				log.Println(fmt.Sprintf("[%s] Skip Metrics Priority! Error on PodList -> %s", node.Name, err))
 
 				continue
 			}
 
-			cpuUsageValue = nodeMetrics.Usage.Cpu().MilliValue()
-			memUsageValue = nodeMetrics.Usage.Memory().Value()
-			// podUsageValue = nodeMetrics.Usage.Pods().Value()
-			// } else if scheduler.metricsStrategy == "kube-state-metrics" {
-			// 	//utilizando método alternativo
-			// 	kubeStateMetricsConfig, err := kubestatemetrics.NewForConfig(configMetrics)
+			if scheduler.debugAffinityEvents {
+				log.Println(fmt.Sprintf("Node [%-16s] compute metrics with %s", node.Name, scheduler.metricsStrategy))
+			}
 
-			// 	//problema p/ obter dados via API de métricas
-			// 	if err != nil {
-			// 		//se não for possível calcular as métricas de um NODE, apenas adiciono ele na lista de prioridades com valor 0
-			// 		mapOfNodePriorities[node] = 0
+			//atribuindo os Pods à variável
+			listOfNodePods = podListFromCurrentNode.Items
 
-			// 		log.Println(fmt.Sprintf("[%-16s] Skip Metrics Priority! Error on NodeMetricses of Kube State Metrics -> %s", node.Name, err))
+			//o calculo da quantidade de PODs em uso será realizado a partir do tamanho da lista encontrada pela busca de PODs vinculados ao nó
+			podUsageValue = int64(len(listOfNodePods))
 
-			// 		continue
-			// 	}
+			//TODO buscar método alternativo p/ calculo da ociosidade computacional, estou tendo mtos problemas com o Metrics Server
+			//obtendo as métricas de uso ref. ao NODE atual
+			if scheduler.metricsStrategy == "metrics-server" {
+				metricsServerConfig, err := metricsserver.NewForConfig(configMetrics)
 
-			// 	v, err := kubeStateMetricsConfig.Discovery().ServerVersion()
+				//utilizando a API "MetricsServer"
+				nodeMetrics, err := metricsServerConfig.MetricsV1beta1().NodeMetricses().Get(context.TODO(), node.Name, metaV1.GetOptions{})
 
-			// 	if err != nil {
-			// 		log.Println("error while trying to communicate with apiserver")
+				//problema p/ obter dados via API de métricas
+				if err != nil {
+					//se não for possível calcular as métricas de um NODE, apenas adiciono ele na lista de prioridades com valor 0
+					mapOfNodePriorities[node] = 0
 
-			// 		continue
-			// 	}
+					log.Println(fmt.Sprintf("[%-16s] Skip Metrics Priority! Error on NodeMetricses of Metrics Server -> %s", node.Name, err))
 
-			// 	log.Println(fmt.Sprintf("Running with Kubernetes cluster version: v%s.%s. git version: %s. git tree state: %s. commit: %s. platform: %s",
-			// 		v.Major, v.Minor, v.GitVersion, v.GitTreeState, v.GitCommit, v.Platform))
-
-			// 	log.Println("Communication with server successful")
-		} else {
-			//TODO calculando recurso utilizado pelos PODs diretamente dos limites definidos do deployment
-			for _, podFromCurrentNode := range (*podListFromCurrentNode).Items {
-				arrOfContainersFromPod := podFromCurrentNode.Spec.Containers
-
-				//se houve problema na execução do POD, não considero o mesmo no consumo do nó computacional
-				if podFromCurrentNode.Status.Phase == "Failed" {
 					continue
 				}
 
-				for _, containerFromPod := range arrOfContainersFromPod {
-					podCPULimits := containerFromPod.Resources.Limits.Cpu().MilliValue()
-					podMemoryLimits := containerFromPod.Resources.Limits.Memory().Value()
+				cpuUsageValue = nodeMetrics.Usage.Cpu().MilliValue()
+				memUsageValue = nodeMetrics.Usage.Memory().Value()
+				// podUsageValue = nodeMetrics.Usage.Pods().Value()
+				// } else if scheduler.metricsStrategy == "kube-state-metrics" {
+				// 	//utilizando método alternativo
+				// 	kubeStateMetricsConfig, err := kubestatemetrics.NewForConfig(configMetrics)
 
-					if podCPULimits <= 0 {
-						podCPULimits = 100 //0.1 cpu - 100 milicpu
+				// 	//problema p/ obter dados via API de métricas
+				// 	if err != nil {
+				// 		//se não for possível calcular as métricas de um NODE, apenas adiciono ele na lista de prioridades com valor 0
+				// 		mapOfNodePriorities[node] = 0
+
+				// 		log.Println(fmt.Sprintf("[%-16s] Skip Metrics Priority! Error on NodeMetricses of Kube State Metrics -> %s", node.Name, err))
+
+				// 		continue
+				// 	}
+
+				// 	v, err := kubeStateMetricsConfig.Discovery().ServerVersion()
+
+				// 	if err != nil {
+				// 		log.Println("error while trying to communicate with apiserver")
+
+				// 		continue
+				// 	}
+
+				// 	log.Println(fmt.Sprintf("Running with Kubernetes cluster version: v%s.%s. git version: %s. git tree state: %s. commit: %s. platform: %s",
+				// 		v.Major, v.Minor, v.GitVersion, v.GitTreeState, v.GitCommit, v.Platform))
+
+				// 	log.Println("Communication with server successful")
+			} else {
+				//TODO calculando recurso utilizado pelos PODs diretamente dos limites definidos do deployment
+				for _, podFromCurrentNode := range listOfNodePods {
+					arrOfContainersFromPod := podFromCurrentNode.Spec.Containers
+
+					//se houve problema na execução do POD, não considero o mesmo no consumo do nó computacional
+					if podFromCurrentNode.Status.Phase == "Failed" {
+						continue
 					}
 
-					if podMemoryLimits <= 0 {
-						podMemoryLimits = 67108864 //64mb
-					}
+					for _, containerFromPod := range arrOfContainersFromPod {
+						podCPULimits := containerFromPod.Resources.Limits.Cpu().MilliValue()
+						podMemoryLimits := containerFromPod.Resources.Limits.Memory().Value()
 
-					cpuUsageValue += podCPULimits
-					memUsageValue += podMemoryLimits
+						if podCPULimits <= 0 {
+							podCPULimits = 100 //0.1 cpu - 100 milicpu
+						}
 
-					if scheduler.debugAffinityEvents {
-						log.Println(fmt.Sprintf("Pod [%s] Limits -> CPU [%d] Memory [%d]", podFromCurrentNode.Name, podCPULimits, podMemoryLimits))
+						if podMemoryLimits <= 0 {
+							podMemoryLimits = 67108864 //64mb
+						}
+
+						cpuUsageValue += podCPULimits
+						memUsageValue += podMemoryLimits
+
+						if scheduler.debugAffinityEvents {
+							log.Println(fmt.Sprintf("Pod [%s] Limits -> CPU [%d] Memory [%d]", podFromCurrentNode.Name, podCPULimits, podMemoryLimits))
+						}
 					}
 				}
 			}
-		}
 
-		if scheduler.debugAffinityEvents {
-			msgNodeUsage := fmt.Sprintf("Node [%-16s] usage -> CPU [%d/%d] Memory [%d/%d] POD [%d/%d]", node.Name, cpuCapacityValue, cpuUsageValue, memCapacityValue, memUsageValue, podCapacityValue, podUsageValue)
+			if scheduler.debugAffinityEvents {
+				msgNodeUsage := fmt.Sprintf("Node [%-16s] usage -> CPU [%d/%d] Memory [%d/%d] POD [%d/%d]", node.Name, cpuCapacityValue, cpuUsageValue, memCapacityValue, memUsageValue, podCapacityValue, podUsageValue)
 
-			log.Println(msgNodeUsage)
+				log.Println(msgNodeUsage)
+			}
 		}
 
 		//a prioridade do nó computacional será definida mediante a afinidade com as labels definidas somada a capacidade livre disponível
