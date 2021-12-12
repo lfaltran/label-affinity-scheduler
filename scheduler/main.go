@@ -958,13 +958,15 @@ func (scheduler *Scheduler) listObjectEvents(objKind string, objNamespace string
 
 	log.Println("listObjectEvents -> " + fieldSelectOfObjectEvent)
 
-	listOfObjectEvents, _ := scheduler.clientset.CoreV1().Events(objNamespace).List(context.TODO(), metaV1.ListOptions{
+	listOfObjectEvents, err := scheduler.clientset.CoreV1().Events(objNamespace).List(context.TODO(), metaV1.ListOptions{
 		// FieldSelector: fieldSelectOfObjectEvent,
 		FieldSelector: "involvedObject.name=" + objName,
 		TypeMeta:      metaV1.TypeMeta{Kind: objKind},
 	})
 
-	//FieldSelector: fmt.Sprintf("reason=%s,involvedObject.kind=%s,involvedObject.name=%s", reason, objKind, objName),
+	if err != nil {
+		log.Println(fmt.Sprintf("--> erro listObjectEvents [%s]", err))
+	}
 
 	return listOfObjectEvents
 }
