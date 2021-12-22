@@ -22,4 +22,4 @@ spec:
           args: ["label-affinity-scheduler", "ppgcomp.unioeste.br", "resource-limits", "false", "true"]
           imagePullPolicy: Always
       nodeSelector:
-        kubernetes.io/hostname: k8smaster
+        kubernetes.io/hostname: oracle-master-01
