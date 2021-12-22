@@ -395,7 +395,7 @@ func (scheduler *Scheduler) schedulePodInQueue() {
 		return
 	}
 
-	log.Println(message)
+	// log.Println(message)
 }
 
 //Encontrando o nó computacional participante do cluster que possui a maior afinidade com o POD recebido
