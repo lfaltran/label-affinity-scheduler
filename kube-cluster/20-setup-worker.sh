@@ -106,11 +106,11 @@ echo '129.146.171.94 k8s-ppgcomp.unioeste.br' | tee -a /etc/hosts
 # vi /etc/default/kubelet
 # KUBELET_EXTRA_ARGS=--node-ip={IP_VPN/192.168.0.x}
 cat > /etc/default/kubelet <<EOF
-KUBELET_EXTRA_ARGS=--node-ip=192.168.0.
+KUBELET_EXTRA_ARGS=--node-ip=192.168.0.43
 EOF
 
 # systemctl restart kubelet
 
 ### AO TÉRMINO ###
-#Executar no NODE MASTER -> kubeadm token create --print-join-command
+#Executar no NODE MASTER -> kubeadm token create --ttl=0 --print-join-command
 #Executar no NODE WORKER -> kubeadm join k8s-ppgcomp.unioeste.br:6443 ... --node-name

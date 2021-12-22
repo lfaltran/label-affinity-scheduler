@@ -175,10 +175,10 @@ kubectl get pods -n kube-system
 
 #Join the worker nodes to the Cluster
 # ***** KUBEADM JOIN *****
-kubeadm token create --print-join-command
+kubeadm token create --ttl=0 --print-join-command
 
-kubeadm join k8s-ppgcomp.unioeste.br:6443 --token l7zin3.y4usoxbvmc7qrcxl \
-	--discovery-token-ca-cert-hash sha256:85ee449bcf60d38b140952f936f52427db120030bfa3b7023e21e7799819f336
+kubeadm join k8s-ppgcomp.unioeste.br:6443 --token v1zqpr.1cfen84s6c7xqhmj \
+	--discovery-token-ca-cert-hash sha256:31d57ac4e6b5e7952a8cf4d88c540f747ebb97f71aed83b4e2559e1b7ea8e8b3
 
 # Liberação de portas
 #https://stackoverflow.com/a/54810101
