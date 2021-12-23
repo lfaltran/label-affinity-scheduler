@@ -13,7 +13,7 @@ spec:
         app: nginx-d
         ppgcomp.unioeste.br/on_ramp: "eq-no"
         ppgcomp.unioeste.br/app_environment: "eq-prod"
-        ppgcomp.unioeste.br/dc_country: "eq_-brazil"
+        ppgcomp.unioeste.br/dc_country: "eq_-brazil.5"
       annotations:
         lfaltran.io/deployment.node.log: "true"
     spec:
