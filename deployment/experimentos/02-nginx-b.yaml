@@ -11,7 +11,7 @@ spec:
     metadata:
       labels:
         app: nginx-b
-        ppgcomp.unioeste.br/price: "le_-0.30"
+        ppgcomp.unioeste.br/price: "le-0.30"
       annotations:
         lfaltran.io/deployment.node.log: "true"        
     spec:

@@ -575,7 +575,8 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 		//se o valor informado para o label possuir um ".", considero que o valor subsequente como sendo um "peso" no calculo do "affinityValue"
 		podLabelWeightArgs := strings.Split(podLabelValue, ".")
 
-		if len(podLabelWeightArgs) >= 2 {
+		//ajuste nos valores de label utilizando operações numéricas, pois o caractere "." eh separador de decimal e não se aplica
+		if len(podLabelWeightArgs) >= 2 && !stringInSlice(podLabelOperator, []string{"gt", "ge", "lt", "le"}) {
 			podLabelValue = podLabelWeightArgs[0]
 
 			var errPodLabelAffinityWeight error
