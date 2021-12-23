@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-c
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: nginx-c
+  template:
+    metadata:
+      labels:
+        app: nginx-c
+        ppgcomp.unioeste.br/spot: "eq_-yes"
+        ppgcomp.unioeste.br/os_type: "eq-linux"
+        ppgcomp.unioeste.br/dc_country: "eq-usa"
+      annotations:
+        lfaltran.io/deployment.node.log: "true"
+    spec:
+      schedulerName: label-affinity-scheduler
+      containers:
+      - name: nginx-c
+        image: nginx:99999
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+              cpu: "200m"
+              memory: "128Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+        ports:
+        - containerPort: 8080

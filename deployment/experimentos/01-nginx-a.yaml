@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-a
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: nginx-a
+  template:
+    metadata:
+      labels:
+        app: nginx-a
+      annotations:
+        lfaltran.io/deployment.node.log: "true"
+    spec:
+      schedulerName: label-affinity-scheduler
+      containers:
+      - name: nginx-a
+        image: nginx:99999
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+              cpu: "200m"
+              memory: "128Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+        ports:
+        - containerPort: 8080

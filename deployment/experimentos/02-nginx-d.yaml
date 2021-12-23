@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-d
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: nginx-d
+  template:
+    metadata:
+      labels:
+        app: nginx-d
+        ppgcomp.unioeste.br/on_ramp: "eq-no"
+        ppgcomp.unioeste.br/app_environment: "eq-prod"
+        ppgcomp.unioeste.br/dc_country: "eq_-brazil"
+      annotations:
+        lfaltran.io/deployment.node.log: "true"
+    spec:
+      schedulerName: label-affinity-scheduler
+      containers:
+      - name: nginx-d
+        image: nginx:99999
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+              cpu: "200m"
+              memory: "128Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"
+        ports:
+        - containerPort: 8080

@@ -602,6 +602,9 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 				continue
 			}
 
+			//debug de apoio p/ acompanhar valor de labels
+			log.Println(fmt.Sprintf("POD label debug => podLabelOperator %s / podLabelValue %s / podLabelOptional %t", podLabelOperator, podLabelValue, podLabelOptional))
+
 			//a partir daqui o nó possui a definição do label alvo da verificação de afinidade
 			nodeHasPodLabel = true
 
@@ -615,6 +618,15 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 			if stringInSlice(podLabelOperator, []string{"gt", "ge", "lt", "le"}) {
 				podLabelValueAsFloat, errPodLabelValue = strconv.ParseFloat(podLabelValue, 10)
 				nodeLabelValueAsFloat, errNodeLabelValue = strconv.ParseFloat(nodeLabelValue, 10)
+
+				//debug de apoio p/ acompanhar valor de labels
+				if errPodLabelValue != nil {
+					log.Println(fmt.Sprintf("POD Label Value Error %s => %s", podLabelValue, errPodLabelValue.Error()))
+				}
+
+				if errNodeLabelValue != nil {
+					log.Println(fmt.Sprintf("NODE Label Value Error %s => %s", podLabelValue, errNodeLabelValue.Error()))
+				}
 
 				//se houver problema
 				if errPodLabelValue == nil && errNodeLabelValue == nil {
