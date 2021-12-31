@@ -659,9 +659,13 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 				}
 			case "gt":
 				if mathLabelValueOperation && nodeLabelValueAsFloat > podLabelValueAsFloat {
-					if podLabelValueAsFloat <= 0 {
+					if podLabelValueAsFloat < 0 {
 						podLabelAffinityValue = 1
 					} else {
+						if podLabelValueAsFloat == 0 {
+							podLabelValueAsFloat = 1
+						}
+
 						podLabelAffinityValue = nodeLabelValueAsFloat / podLabelValueAsFloat
 					}
 				} else if nodeLabelValue > podLabelValue {
@@ -671,9 +675,13 @@ func computeLabelAffinityValue(mapOfPodLabelsCustomSchedulerStrategy map[string]
 				}
 			case "ge":
 				if mathLabelValueOperation && nodeLabelValueAsFloat >= podLabelValueAsFloat {
-					if podLabelValueAsFloat <= 0 {
+					if podLabelValueAsFloat < 0 {
 						podLabelAffinityValue = 1
 					} else {
+						if podLabelValueAsFloat == 0 {
+							podLabelValueAsFloat = 1
+						}
+
 						podLabelAffinityValue = nodeLabelValueAsFloat / podLabelValueAsFloat
 					}
 				} else if nodeLabelValue >= podLabelValue {

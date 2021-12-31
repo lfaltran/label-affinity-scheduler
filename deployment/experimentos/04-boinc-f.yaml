@@ -1,26 +1,24 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: nginx-e
+  name: boinc-f
 spec:
   replicas: 0
   selector:
     matchLabels:
-      app: nginx-e
+      app: boinc-f
   template:
     metadata:
       labels:
-        app: nginx-e
-        ppgcomp.unioeste.br/cloud_vendor: "eq-gcp"
-        ppgcomp.unioeste.br/dc_continent: "eq-america"
-        ppgcomp.unioeste.br/price: "le-0.10"
+        app: boinc-f
+        ppgcomp.unioeste.br/green_energy_perc: "gt-0"
       annotations:
         lfaltran.io/deployment.node.log: "true"
     spec:
       schedulerName: label-affinity-scheduler
       containers:
-      - name: nginx-e
-        image: nginx:99999
+      - name: boinc-f
+        image: zilman/boinc:99999
         imagePullPolicy: IfNotPresent
         resources:
           requests:
