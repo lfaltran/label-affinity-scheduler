@@ -19,6 +19,7 @@ Melhoria de desempenho na atribuição dos nós computacionais
 ### Fixed
 - Correção no disparo de eventos ref. a PODs que não estejam em situação RUNNING porém já foram alocados à um Nó Computacional
 - Ajuste nos valores de label utilizando operações numéricas, pois o caractere "." eh separador de decimal e não se aplica
+- Correção durante utilização de operadores GT, GE, LT e LE em cenários de valores "0"
 
 ## [1.10] - 2021-12-05
 
