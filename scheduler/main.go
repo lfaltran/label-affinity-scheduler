@@ -525,7 +525,7 @@ func (scheduler *Scheduler) buildMapOfNodesByLabelAffinity(listOfNodes []*coreV1
 		}
 
 		sort.Slice(arrOfNodeLabelAffinities, func(i, j int) bool {
-			return arrOfNodeLabelAffinities[i].node.Name < arrOfNodeLabelAffinities[j].node.Name
+			return arrOfNodeLabelAffinities[i].affinityValue > arrOfNodeLabelAffinities[j].affinityValue
 		})
 
 		for _, nodeLabelAffinity := range arrOfNodeLabelAffinities {

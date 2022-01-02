@@ -25,7 +25,7 @@ spec:
               cpu: "200m"
               memory: "128Mi"
           limits:
-            cpu: "200m"
-            memory: "128Mi"
+            cpu: "8000m" #colocar o maximo
+            memory: "32000Mi" #colocar o maximo
         ports:
         - containerPort: 8080
