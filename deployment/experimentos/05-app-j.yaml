@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-j
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: app-j
+  template:
+    metadata:
+      labels:
+        app: app-j
+        ppgcomp.unioeste.br/cloud_vendor: "in-azure-aws-gcp-oracle"
+        ppgcomp.unioeste.br/os_type: "in-linux-windows"
+        ppgcomp.unioeste.br/price: "notin-tst"
+      annotations:
+        lfaltran.io/deployment.node.log: "true"
+    spec:
+      schedulerName: label-affinity-scheduler
+      containers:
+      - name: app-j
+        image: hendrikmaus/kubernetes-dummy-image:latest
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            cpu: "25m"
+            memory: "16Mi"

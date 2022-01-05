@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-i-1000
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: nginx-i-1000
+  template:
+    metadata:
+      labels:
+        app: nginx-i-1000
+        ppgcomp.unioeste.br/cloud_vendor: "in-azure-aws-gcp-oracle"
+        ppgcomp.unioeste.br/os_type: "in-linux-windows"
+        ppgcomp.unioeste.br/price: "notin-tst"
+      annotations:
+        lfaltran.io/deployment.node.log: "true"
+    spec:
+      # schedulerName: label-affinity-scheduler
+      containers:
+      - name: nginx-i-1000
+        image: nginx:99999
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            cpu: "25m"
+            memory: "16Mi"
+        ports:
+        - containerPort: 8080

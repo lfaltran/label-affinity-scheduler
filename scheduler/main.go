@@ -944,7 +944,7 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 
 		//se um NODE já chegou ao seu limite de PODs, forço para que ele não seja considerado
 		if podUsageValue >= podCapacityValue {
-			nodePriority = -1
+			nodePriority = -99999
 		} else {
 			//calculando a capacidade livre de POD
 			podCapacityIdle := (1 - podCapacityUsage*100)
@@ -988,6 +988,11 @@ func (scheduler *Scheduler) findBestNode(mapOfNodePriorities map[*coreV1.Node]fl
 	var bestNode *coreV1.Node
 
 	for node, p := range mapOfNodePriorities {
+		//se a prioridade do nó for negativa, ignoro-o foi estourou algum limite (POD COUNT / MEMORY / CPU / AFINIDADE)
+		if p < 0 {
+			continue
+		}
+
 		if p > maxP || bestNode == nil {
 			maxP = p
 			bestNode = node

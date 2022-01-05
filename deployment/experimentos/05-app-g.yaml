@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-g-10
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: nginx-g-10
+  template:
+    metadata:
+      labels:
+        app: nginx-g-10
+        ppgcomp.unioeste.br/cloud_vendor: "in-azure-aws-gcp-oracle"
+        ppgcomp.unioeste.br/os_type: "in-linux-windows"
+        ppgcomp.unioeste.br/price: "notin-tst"
+      annotations:
+        lfaltran.io/deployment.node.log: "true"
+    spec:
+      # schedulerName: label-affinity-scheduler
+      containers:
+      - name: nginx-g-10
+        image: nginx:99999
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+              cpu: "100m"
+              memory: "64Mi"
+          limits:
+            cpu: "100m"
+            memory: "64Mi"
+        ports:
+        - containerPort: 8080

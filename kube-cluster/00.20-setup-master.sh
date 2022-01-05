@@ -86,7 +86,7 @@ vi /etc/hosts
 apiVersion: kubeadm.k8s.io/v1beta2
 kind: InitConfiguration
 nodeRegistration:
-   name: oracle-master-01
+  name: oracle-master-01
 localAPIEndpoint:
   advertiseAddress: 192.168.0.1
 ---
@@ -96,41 +96,47 @@ networking:
   podSubnet: 10.240.0.0/16
   serviceSubnet: 10.96.0.0/12
 controlPlaneEndpoint: k8s-ppgcomp.unioeste.br
+apiServer:
+  extraArgs:
+    event-ttl: "24h"
 clusterName: ppgcomp
 
 #v3 - calico
 # apiVersion: kubeadm.k8s.io/v1beta2
 # kind: InitConfiguration
 # nodeRegistration:
-#    name: "k8smaster"
+#   name: "k8smaster"
 # localAPIEndpoint:
 #   advertiseAddress: "10.100.0.1"
 # ---
 # apiVersion: kubeadm.k8s.io/v1beta2
 # kind: ClusterConfiguration
 # etcd:
-#    local:
-#       serverCertSANs:
-#          - "k8s-ppgcomp.unioeste.br"
-#       peerCertSANs:
-#          - "10.100.0.1"
-#       extraArgs:
-#          # listen-peer-urls: "https://10.100.0.1:2380"
-#          listen-client-urls: "https://10.100.0.1:2379"
-#          # advertise-client-urls: "https://10.100.0.1:2379"
-#          # initial-advertise-peer-urls: "https://10.100.0.1:2380"
+#   local:
+#     serverCertSANs:
+#       - "k8s-ppgcomp.unioeste.br"
+#     peerCertSANs:
+#       - "10.100.0.1"
+#     extraArgs:
+#       # listen-peer-urls: "https://10.100.0.1:2380"
+#       listen-client-urls: "https://10.100.0.1:2379"
+#       # advertise-client-urls: "https://10.100.0.1:2379"
+#       # initial-advertise-peer-urls: "https://10.100.0.1:2380"
 # networking:
 #   serviceSubnet: "172.16.10.0/12"
 #   podSubnet: "10.100.0.1/24"
 # controlPlaneEndpoint: "10.100.0.1:6443"
 # apiServer:
-#    certSANs:
-#       - "10.100.1.1"
-#       - "k8s-ppgcomp.unioeste.br"
+#   certSANs:
+#     - "10.100.1.1"
+#     - "k8s-ppgcomp.unioeste.br"
+#   extraArgs:
+#     event-ttl: "72h"
 # scheduler:
-#    extraArgs:
-#       address: "10.100.0.1"
+#   extraArgs:
+#     address: "10.100.0.1"
 # clusterName: "ppgcomp"
+
 
 # via command line
 kubeadm init \
