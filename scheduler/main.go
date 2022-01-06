@@ -237,7 +237,7 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 			// }
 
 			//se não houve atribuição de NODE ao POD, não gero nenhum evento p/ ele
-			if pod.Spec.NodeName == "" || pod.Spec.SchedulerName == "label-affinity-scheduler" {
+			if pod.Spec.NodeName == "" || pod.Spec.SchedulerName == scheduler.name {
 				return
 			}
 
