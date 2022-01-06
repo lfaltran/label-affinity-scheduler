@@ -33,6 +33,7 @@ import (
 
 var nodeNamePaddingSize int
 var defaultSchedulerName string
+var arrOfPodsWithScheduleEvent []string
 
 //POJO de apoio para realizar a gestão de PODS e o processo de Bind
 type Scheduler struct {
@@ -237,7 +238,7 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 			// }
 
 			//se não houve atribuição de NODE ao POD, não gero nenhum evento p/ ele
-			if pod.Spec.NodeName == "" || pod.Spec.SchedulerName == scheduler.name {
+			if pod.Spec.NodeName == "" || pod.Spec.SchedulerName == scheduler.name || stringInSlice(pod.Name, arrOfPodsWithScheduleEvent) {
 				return
 			}
 
@@ -256,6 +257,8 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 			}
 
 			log.Println(message)
+
+			arrOfPodsWithScheduleEvent = append(arrOfPodsWithScheduleEvent, pod.Name)
 
 			// //bloco abaixo responsável p/ emitir eventos de custom scheduler diretamente no DEPLOYMENT
 			// //extraindo o Deployment diretamente vinculado ao POD
@@ -1117,7 +1120,7 @@ func (scheduler *Scheduler) emitEvent(sourceName string, objKind string, objName
 
 	_, err := scheduler.clientset.CoreV1().Events(objNamespace).Create(context.TODO(), &coreV1.Event{
 		Count:          1,
-		Reason:         reason,
+		Reason:         ("LAS-" + reason),
 		Message:        message,
 		LastTimestamp:  metaV1.NewTime(timestamp),
 		FirstTimestamp: metaV1.NewTime(timestamp),
