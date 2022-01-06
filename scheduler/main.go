@@ -820,7 +820,7 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 
 	mapOfNodesWithPods := make(map[*coreV1.Node][]coreV1.Pod)
 
-	for node, _ := range mapOfNodesByLabelAffinity {
+	for node := range mapOfNodesByLabelAffinity {
 		mapOfNodesWithPods[node] = make([]v1.Pod, 0)
 	}
 
