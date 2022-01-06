@@ -237,53 +237,70 @@ func buildSchedulerEventHandler(scheduler *Scheduler, podQueued chan *coreV1.Pod
 			// }
 
 			//se não houve atribuição de NODE ao POD, não gero nenhum evento p/ ele
-			if pod.Spec.NodeName == "" {
+			if pod.Spec.NodeName == "" || pod.Spec.SchedulerName == "label-affinity-scheduler" {
 				return
 			}
 
-			//extraindo o Deployment diretamente vinculado ao POD
-			deploymentNameOfPod := pod.Labels["app"]
+			//bloco abaixo responsável p/ emitir eventos de custom scheduler diretamente no POD
+			//log no console ref. ao bind realizado
+			message := fmt.Sprintf("Scheduler [%s] assigned POD [%s/%s] to [%-*s]", pod.Spec.SchedulerName, pod.Namespace, pod.Name, nodeNamePaddingSize, pod.Spec.NodeName)
 
-			//gerando evento de notificação ref. a novo POD vinculado a um DEPLOYMENT
-			deploymentOfPod, err := scheduler.clientset.AppsV1().Deployments(pod.Namespace).Get(scheduler.context, deploymentNameOfPod, metaV1.GetOptions{})
+			//gerando eventos no console do Kubernetes para acompanhar o custom scheduler
+			//evento vinculado ao POD
+			err = scheduler.emitEvent(scheduler.name, "Pod", pod.Namespace, pod.Name, "", pod.UID, "Scheduled", message)
 
-			if err == nil {
-				//abaixo eh realizado um gerenciamento dos eventos no objeto DEPLOYMENT
-				kind := "Deployment"
-				reason := "PodScheduled"
-				emitNewEvent := true
+			if err != nil {
+				log.Println("failed to emit scheduled event for POD", err.Error())
 
-				//verificando se jah não foi gerado um evento ref. ao DEPLOYMENT
-				listOfObjectEvents := scheduler.listObjectEvents(kind, deploymentOfPod.Namespace, deploymentOfPod.Name, reason)
-
-				// log.Println(listOfObjectEvents.Items)
-				// log.Println(fmt.Sprintf("Size of listOfObjectEvents.Items => %v", len(listOfObjectEvents.Items)))
-
-				//percorrendo os eventos do Deployment p/ evitar repetidos
-				for _, event := range listOfObjectEvents.Items {
-					if strings.Contains(event.Message, pod.Name) {
-						emitNewEvent = false
-
-						break
-					}
-				}
-
-				//se nao houver evento ainda p/ o objeto atual, gera um registro
-				if emitNewEvent {
-					message := fmt.Sprintf("Scheduler [%s] assigned POD [%s/%s] to [%-*s]", pod.Spec.SchedulerName, pod.Namespace, pod.Name, nodeNamePaddingSize, pod.Spec.NodeName)
-
-					log.Println(message)
-
-					//evento vinculado ao DEPLOYMENT
-					err = scheduler.emitEvent(defaultSchedulerName, kind, deploymentOfPod.Namespace, deploymentOfPod.Name, pod.Name, deploymentOfPod.UID, reason, message)
-
-					if err != nil {
-						log.Println("failed to emit scheduled event for DEPLOYMENT", err.Error())
-
-						return
-					}
-				}
+				return
 			}
+
+			log.Println(message)
+
+			// //bloco abaixo responsável p/ emitir eventos de custom scheduler diretamente no DEPLOYMENT
+			// //extraindo o Deployment diretamente vinculado ao POD
+			// deploymentNameOfPod := pod.Labels["app"]
+
+			// //gerando evento de notificação ref. a novo POD vinculado a um DEPLOYMENT
+			// deploymentOfPod, err := scheduler.clientset.AppsV1().Deployments(pod.Namespace).Get(scheduler.context, deploymentNameOfPod, metaV1.GetOptions{})
+
+			// if err == nil {
+			// 	//abaixo eh realizado um gerenciamento dos eventos no objeto DEPLOYMENT
+			// 	kind := "Deployment"
+			// 	reason := "PodScheduled"
+			// 	emitNewEvent := true
+
+			// 	//verificando se jah não foi gerado um evento ref. ao DEPLOYMENT
+			// 	listOfObjectEvents := scheduler.listObjectEvents(kind, deploymentOfPod.Namespace, deploymentOfPod.Name, reason)
+
+			// 	// log.Println(listOfObjectEvents.Items)
+			// 	// log.Println(fmt.Sprintf("Size of listOfObjectEvents.Items => %v", len(listOfObjectEvents.Items)))
+
+			// 	//percorrendo os eventos do Deployment p/ evitar repetidos
+			// 	for _, event := range listOfObjectEvents.Items {
+			// 		if strings.Contains(event.Message, pod.Name) {
+			// 			emitNewEvent = false
+
+			// 			break
+			// 		}
+			// 	}
+
+			// 	//se nao houver evento ainda p/ o objeto atual, gera um registro
+			// 	if emitNewEvent {
+			// 		message := fmt.Sprintf("Scheduler [%s] assigned POD [%s/%s] to [%-*s]", pod.Spec.SchedulerName, pod.Namespace, pod.Name, nodeNamePaddingSize, pod.Spec.NodeName)
+
+			// 		//evento vinculado ao DEPLOYMENT
+			// 		err = scheduler.emitEvent(defaultSchedulerName, kind, deploymentOfPod.Namespace, deploymentOfPod.Name, pod.Name, deploymentOfPod.UID, reason, message)
+
+			// 		if err != nil {
+			// 			log.Println("failed to emit scheduled event for DEPLOYMENT", err.Error())
+
+			// 			return
+			// 		}
+
+			// 		log.Println(message)
+			// 	}
+			// }
 		},
 	})
 
@@ -395,7 +412,7 @@ func (scheduler *Scheduler) schedulePodInQueue() {
 		return
 	}
 
-	// log.Println(message)
+	log.Println(message)
 }
 
 //Encontrando o nó computacional participante do cluster que possui a maior afinidade com o POD recebido
@@ -794,6 +811,46 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 
 	mapOfNodePriorities := make(map[*coreV1.Node]float64)
 
+	//listando todos os PODs da aplicação atual
+	appName := pod.Labels["app"]
+
+	if scheduler.debugAffinityEvents {
+		log.Println(fmt.Sprintf("Begin PodList of App [%s]", appName))
+	}
+
+	mapOfNodesWithPods := make(map[*coreV1.Node][]coreV1.Pod)
+
+	for node, _ := range mapOfNodesByLabelAffinity {
+		mapOfNodesWithPods[node] = make([]v1.Pod, 0)
+	}
+
+	//listar todos os Pods
+	listOptionsForPodFilter := metaV1.ListOptions{
+		LabelSelector: "app=" + appName,
+	}
+
+	podListFromCurrentApp, err := scheduler.clientset.CoreV1().Pods(pod.Namespace).List(context.TODO(), listOptionsForPodFilter)
+
+	//percorrendo os PODs p/ distribuí-los dentre os nós
+	if err != nil {
+		return mapOfNodePriorities
+	}
+
+	//percorrendo os Pods e realizando calculo da distribuição nos Nodes
+	for _, podFromCurrentApp := range (*podListFromCurrentApp).Items {
+		for node := range mapOfNodesWithPods {
+			if node.Name != podFromCurrentApp.Spec.NodeName {
+				continue
+			}
+
+			mapOfNodesWithPods[node] = append(mapOfNodesWithPods[node], podFromCurrentApp)
+		}
+	}
+
+	if scheduler.debugAffinityEvents {
+		log.Println(fmt.Sprintf("End PodList of App [%s]", appName))
+	}
+
 	for node, affinityValue := range mapOfNodesByLabelAffinity {
 		//declarando atributos para calculo de consumo dos recursos computacionais do NODE atual
 		cpuCapacityValue := node.Status.Allocatable.Cpu().MilliValue()
@@ -815,38 +872,6 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 				log.Println(fmt.Sprintf("[%s] Skip Node Compute Metrics!", node.Name))
 			}
 		} else {
-			listOfNodePods := make([]v1.Pod, 0)
-
-			if scheduler.debugAffinityEvents {
-				log.Println(fmt.Sprintf("Begin PodList on Node [%-16s]", node.Name))
-			}
-
-			//calculando a quantidade de PODs em execução no nó atual
-			podListFromCurrentNode, err := scheduler.clientset.CoreV1().Pods(metaV1.NamespaceAll).List(context.TODO(), metaV1.ListOptions{
-				FieldSelector: "spec.nodeName=" + node.Name,
-			})
-
-			if scheduler.debugAffinityEvents {
-				log.Println(fmt.Sprintf("End PodList on Node [%-16s]", node.Name))
-			}
-
-			if err != nil {
-				log.Println(fmt.Sprintf("[%s] Skip Metrics Priority! Error on PodList -> %s", node.Name, err))
-
-				continue
-			}
-
-			if scheduler.debugAffinityEvents {
-				log.Println(fmt.Sprintf("Node [%-16s] compute metrics with %s", node.Name, scheduler.metricsStrategy))
-			}
-
-			//atribuindo os Pods à variável
-			listOfNodePods = podListFromCurrentNode.Items
-
-			//o calculo da quantidade de PODs em uso será realizado a partir do tamanho da lista encontrada pela busca de PODs vinculados ao nó
-			podUsageValue = int64(len(listOfNodePods))
-
-			//TODO buscar método alternativo p/ calculo da ociosidade computacional, estou tendo mtos problemas com o Metrics Server
 			//obtendo as métricas de uso ref. ao NODE atual
 			if scheduler.metricsStrategy == "metrics-server" {
 				metricsServerConfig, err := metricsserver.NewForConfig(configMetrics)
@@ -866,7 +891,8 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 
 				cpuUsageValue = nodeMetrics.Usage.Cpu().MilliValue()
 				memUsageValue = nodeMetrics.Usage.Memory().Value()
-				// podUsageValue = nodeMetrics.Usage.Pods().Value()
+				podUsageValue = nodeMetrics.Usage.Pods().Value()
+
 				// } else if scheduler.metricsStrategy == "kube-state-metrics" {
 				// 	//utilizando método alternativo
 				// 	kubeStateMetricsConfig, err := kubestatemetrics.NewForConfig(configMetrics)
@@ -894,7 +920,42 @@ func (scheduler *Scheduler) buildNodePriority(mapOfNodesByLabelAffinity map[*cor
 
 				// 	log.Println("Communication with server successful")
 			} else {
-				//TODO calculando recurso utilizado pelos PODs diretamente dos limites definidos do deployment
+				listOfNodePods := make([]v1.Pod, 0)
+
+				// if scheduler.debugAffinityEvents {
+				// 	log.Println(fmt.Sprintf("Begin PodList on Node [%-16s]", node.Name))
+				// }
+
+				// log.Println("begin list podListFromCurrentNode")
+
+				// //calculando a quantidade de PODs em execução no nó atual
+				// podListFromCurrentNode, err := scheduler.clientset.CoreV1().Pods(metaV1.NamespaceAll).List(context.TODO(), metaV1.ListOptions{
+				// 	FieldSelector: "spec.nodeName=" + node.Name,
+				// })
+
+				// log.Println("end list podListFromCurrentNode")
+
+				// if scheduler.debugAffinityEvents {
+				// 	log.Println(fmt.Sprintf("End PodList on Node [%-16s]", node.Name))
+				// }
+
+				// if err != nil {
+				// 	log.Println(fmt.Sprintf("[%s] Skip Metrics Priority! Error on PodList -> %s", node.Name, err))
+
+				// 	continue
+				// }
+
+				// if scheduler.debugAffinityEvents {
+				// 	log.Println(fmt.Sprintf("Node [%-16s] compute metrics with %s", node.Name, scheduler.metricsStrategy))
+				// }
+
+				//atribuindo os Pods à variável
+				// listOfNodePods = podListFromCurrentNode.Items
+				listOfNodePods = mapOfNodesWithPods[node]
+
+				//o calculo da quantidade de PODs em uso será realizado a partir do tamanho da lista encontrada pela busca de PODs vinculados ao nó
+				podUsageValue = int64(len(listOfNodePods))
+
 				for _, podFromCurrentNode := range listOfNodePods {
 					arrOfContainersFromPod := podFromCurrentNode.Spec.Containers
 
