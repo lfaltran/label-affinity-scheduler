@@ -15,6 +15,7 @@ Melhoria de desempenho na atribuição dos nós computacionais
 ### Changed
 - Ajuste para gerar os eventos de vinculo entre POD e NODE apenas se a operação foi bem sucedida
 - Novo parâmetro p/ permitir que durante a execução do custom scheduler seja ignorado o calculo de métricas dos nós computacionais
+- Melhoria no processo de coleta de PODs de um NODE, melhoria significativa de performance
 
 ### Fixed
 - Correção no disparo de eventos ref. a PODs que não estejam em situação RUNNING porém já foram alocados à um Nó Computacional
