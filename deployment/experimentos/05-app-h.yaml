@@ -1,16 +1,16 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: nginx-h-100
+  name: app-h
 spec:
   replicas: 0
   selector:
     matchLabels:
-      app: nginx-h-100
+      app: app-h
   template:
     metadata:
       labels:
-        app: nginx-h-100
+        app: app-h
         ppgcomp.unioeste.br/cloud_vendor: "in-azure-aws-gcp-oracle"
         ppgcomp.unioeste.br/os_type: "in-linux-windows"
         ppgcomp.unioeste.br/price: "notin-tst"
@@ -19,15 +19,10 @@ spec:
     spec:
       schedulerName: label-affinity-scheduler
       containers:
-      - name: nginx-h-100
-        image: nginx:99999
+      - name: app-h
+        image: hendrikmaus/kubernetes-dummy-image:latest
         imagePullPolicy: IfNotPresent
         resources:
-          requests:
-              cpu: "100m"
-              memory: "64Mi"
           limits:
-            cpu: "100m"
-            memory: "64Mi"
-        ports:
-        - containerPort: 8080
+            cpu: "25m"
+            memory: "16Mi"

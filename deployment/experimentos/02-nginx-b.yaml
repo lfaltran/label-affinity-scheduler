@@ -15,7 +15,7 @@ spec:
       annotations:
         lfaltran.io/deployment.node.log: "true"        
     spec:
-      # schedulerName: label-affinity-scheduler
+      schedulerName: label-affinity-scheduler
       containers:
       - name: nginx-b
         image: nginx:99999
