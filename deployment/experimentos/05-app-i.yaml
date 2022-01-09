@@ -13,7 +13,7 @@ spec:
         app: app-i
         ppgcomp.unioeste.br/cloud_vendor: "in-azure-aws-gcp-oracle"
         ppgcomp.unioeste.br/os_type: "in-linux-windows"
-        ppgcomp.unioeste.br/price: "notin-tst"
+        ppgcomp.unioeste.br/app_environment: "notin-tst"
       annotations:
         lfaltran.io/deployment.node.log: "true"
     spec:
