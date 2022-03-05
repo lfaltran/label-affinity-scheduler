@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-a
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: app-a
+  template:
+    metadata:
+      labels:
+        app: app-a
+        ppgcomp.unioeste.br/dense_io: "eq_-true.5"
+        ppgcomp.unioeste.br/os_type: "eq-windows"
+        ppgcomp.unioeste.br/app_environment: "eq-dev"
+        ppgcomp.unioeste.br/on_ramp: "eq-no"
+      annotations:
+        lfaltran.io/deployment.node.log: "true"
+    spec:
+      schedulerName: label-affinity-scheduler
+      containers:
+      - name: app-a
+        image: hendrikmaus/kubernetes-dummy-image:latest
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            cpu: "25m"
+            memory: "16Mi"

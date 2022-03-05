@@ -1,1 +1,13 @@
 # label-affinity-scheduler
+
+Container allocation policies present in modern orchestration tools, such as Kubernetes, are completely agnostic with respect to specific application requirements or meeting business rules. They usually perform the schedule of applications simply by spreading them among the worker nodes using algorithms such as Round-Robin or First-Fit. Furthermore, when outlining the state of the art, it appears that the proposed strategies do not satisfy the criteria for scheduling applications in real production environments.
+
+This work presents a technique that allows the customization of scheduling as an alternative to the default behavior offered by the orchestration tools of containerized workloads in multi-cloud environments, carrying out pertinent negotiations and validations to achieve the objective of performing the scaling of the application instances to compute nodes with higher affinity. For this, desirable or impositive features are considered, obtained from the requirements phase during the design of the application, or even at the phase of contracting the cloud hosting service.
+
+Looking to offer an alternative to this behavior and in an easy-to-use approach, we propose a custom scheduler that performs an affinity analysis from labels defined in metadata of objects that represent each of the compute nodes and workloads in an orchestrated environment, and as a second feature, prioritize the choice through those nodes with the highest idle computational resources, ensure a result that respects pre-defined rules and restrictions, according to the application business requirements. 
+
+For validation, hypothetical scenarios were built with the definition of random labels, which somehow had an affinity with one or more compute nodes available in the built multi-cloud environment, consisting of 25 nodes distributed across 4 public cloud providers, with different hardware configurations and geographic location, very similar to that found in companies that use this kind of service. An exclusive validation was also carried out to metrify the performance of the scheduling process, in order to analyze the differences in time spent between the default scheduler and the proposed one, under the same conditions and workloads.
+
+# Acknowledgement
+
+This work was supported in part by Oracle Cloud credits and related resources provided by the Oracle for Research program.
