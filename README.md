@@ -8,7 +8,7 @@ Looking to offer an alternative to this behavior and in an easy-to-use approach,
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
-[![Relacionamento de POD c/ Nó Computacional][kube-relacionamento-label-node-workload-v2]]
+![Relacionamento de POD c/ Nó Computacional][kube-relacionamento-label-node-workload-v2]
 
 # How to use
 
